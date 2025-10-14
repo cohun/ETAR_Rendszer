@@ -14,6 +14,8 @@
     <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.34.2/build/docxtemplater.js"></script>
     <!-- FileSaver.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <!-- JSZip -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     
     <style>
         body { font-family: 'Inter', sans-serif; }
@@ -81,6 +83,7 @@
                     <h1 class="text-2xl font-bold">Partner Adatbázis Kiválasztása (EJK)</h1>
                     <button id="signOutButtonEjk" class="btn btn-secondary text-sm">Kijelentkezés</button>
                 </div>
+                <div id="currentPartnerInfo" class="mb-4"></div>
                 <p id="ejkUserInfo" class="mb-6 text-blue-300"></p>
                 <div id="partnerList" class="space-y-2"></div>
                 <div id="ejkStatus" class="mt-6 text-center"></div>
@@ -140,6 +143,7 @@
     
     let currentPartner = {};
     let partnerDatabase = []; 
+    let companyData = {};
     let newDeviceData = [];
     let lastDeviceData = {};
     
@@ -322,6 +326,15 @@
 
     async function showEjkScreen() {
         showScreen('ejkSelect');
+        const currentPartnerInfoDiv = document.getElementById('currentPartnerInfo');
+        if (currentPartner.name) {
+            currentPartnerInfoDiv.innerHTML = `
+                <p class="text-sm text-blue-300">Jelenleg aktív adatbázis:</p>
+                <p class="font-bold text-lg text-green-400">${currentPartner.name}</p>
+            `;
+        } else {
+            currentPartnerInfoDiv.innerHTML = '';
+        }
         document.getElementById('ejkUserInfo').textContent = `Bejelentkezve: ${userProfile.name} (${userProfile.email})`;
         setStatus('ejkStatus', '<div class="loader mx-auto"></div><p class="mt-2">Partnermappák betöltése...</p>');
         try {
@@ -335,13 +348,22 @@
             if (partners && partners.length > 0) {
                 partners.forEach(partner => {
                     const button = document.createElement('button');
-                    button.className = 'w-full text-left p-3 bg-blue-800 hover:bg-blue-700 rounded-md transition-colors font-semibold';
-                    button.textContent = partner.name;
+                    // Alap stílusok
+                    let buttonClasses = 'w-full text-left p-3 rounded-md transition-all font-semibold flex items-center justify-between';
+                    // Kiemelt stílus, ha ez az aktív partner
+                    if (partner.id === currentPartner.folderId) {
+                        buttonClasses += ' bg-green-700 ring-2 ring-green-400';
+                        button.innerHTML = `<span>${partner.name}</span><span class="text-xs font-normal bg-green-900/50 px-2 py-1 rounded">Betöltve</span>`;
+                    } else {
+                        buttonClasses += ' bg-blue-800 hover:bg-blue-700';
+                        button.textContent = partner.name; // Ez a sor hiányzott
+                    }
+                    button.className = buttonClasses;
                     button.dataset.partnerId = partner.id;
                     button.dataset.partnerName = partner.name;
                     partnerListDiv.appendChild(button);
                 });
-                setStatus('ejkStatus', 'Válassz egy partnert a listából a folytatáshoz.');
+                setStatus('ejkStatus', currentPartner.name ? `A(z) '${currentPartner.name}' adatbázisa sikeresen betöltve.` : 'Válassz egy partnert a listából a folytatáshoz.');
             } else {
                  setStatus('ejkStatus', 'Nem találhatók partnermappák a központi tárolóban.', true);
             }
@@ -355,8 +377,12 @@
         currentPartner = { name: partner.name, folderId: partner.id };
         showScreen('ejkMain');
         document.getElementById('ejkSelectedPartner').textContent = partner.name;
-        setStatus('ejkStatus', `<div class="loader mx-auto"></div><p class="mt-2">'${partner.name}' adatbázisának betöltése...</p>`);
-        await loadDatabase(partner.id, 'ejkStatus');
+        setStatus('ejkStatus', `<div class="loader mx-auto"></div><p class="mt-2">'${partner.name}' adatainak betöltése...</p>`);
+        const dbLoaded = await loadDatabase(partner.id, 'ejkStatus');
+        const companyDataLoaded = await loadCompanyData(partner.id, 'ejkStatus');
+        if (dbLoaded && companyDataLoaded) {
+            setStatus('ejkStatus', `Adatok sikeresen betöltve. Adatbázis: ${partnerDatabase.length} eszköz.`, false);
+        }
     }
 
     async function showEnyScreen(partnerFolder) { /* ... */ }
@@ -387,6 +413,57 @@
         }
     }
 
+    async function loadCompanyData(folderId, statusElementId) {
+        setStatus(statusElementId, '<div class="loader mx-auto"></div><p class="mt-2">Cégadatok (`ceg.xlsx`) keresése...</p>');
+        try {
+            const response = await gapi.client.drive.files.list({
+                q: `'${folderId}' in parents and name='ceg.xlsx' and trashed=false`, fields: 'files(id, name)'
+            });
+            if (response.result.files.length > 0) {
+                const fileId = response.result.files[0].id;
+                currentPartner.companyDataFileId = fileId;
+                const fileResponse = await gapi.client.drive.files.get({ fileId: fileId, alt: 'media' });
+                const workbook = XLSX.read(fileResponse.body, { type: 'binary' });
+                const companyDataArray = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                
+                if (companyDataArray.length > 0) {
+                    companyData = companyDataArray[0];
+                    // ETAR kód generálása, ha szükséges
+                    if (!findValue(companyData, 'ETAR kód')) {
+                        const sourceString = `${findValue(companyData, 'Cégnév')}-${findValue(companyData, 'Cím')}`;
+                        const encoder = new TextEncoder();
+                        const dataBuffer = encoder.encode(sourceString);
+                        const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+                        const hashArray = Array.from(new Uint8Array(hashBuffer));
+                        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                        companyData['ETAR kód'] = hashHex.substring(0, 6).toUpperCase();
+                        
+                        // Visszaírás a Drive-ra
+                        await updateCompanyDataOnDrive();
+                    }
+                    return true;
+                }
+            }
+            setStatus(statusElementId, 'Nem található `ceg.xlsx` fájl vagy üres. Kérlek, ellenőrizd a partner mappáját!', true);
+            companyData = {};
+            return false;
+        } catch (err) {
+            setStatus(statusElementId, 'Hiba történt a cégadatok beolvasása közben.', true);
+            companyData = {};
+            return false;
+        }
+    }
+
+    async function updateCompanyDataOnDrive() {
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet([companyData]); // A [companyData] fontos, mert a json_to_sheet tömböt vár
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Cégadatok');
+        const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        
+        await uploadFile(currentPartner.companyDataFileId, blob);
+    }
+
     function showUnauthorizedUser() { /* ... */ }
     function handleSignOut() {
         const token = gapi.client.getToken();
@@ -394,7 +471,7 @@
             google.accounts.oauth2.revoke(token.access_token, () => {
                 gapi.client.setToken('');
                 userProfile = null; partnerDatabase = []; currentPartner = {};
-                showScreen('login');
+                companyData = {}; showScreen('login');
                 setStatus('loadingStatus', '');
             });
         }
@@ -428,8 +505,8 @@
         lastDeviceData = { ...currentData };
         
         const newRecord = {
-            'Cégnév': currentPartner.name,
-            'Cím': partnerDatabase.length > 0 ? findValue(partnerDatabase[0], 'Cím') : '',
+            'Cégnév': findValue(companyData, 'Cégnév') || currentPartner.name,
+            'Cím': findValue(companyData, 'Cím') || '',
             'Megnevezés': currentData.eszkoz_megnevezes,
             'Üzemeltetői azonosító': currentData.eszkoz_uzemeltetoi_azonosito,
             'Típus': currentData.eszkoz_tipus,
@@ -468,8 +545,8 @@
         
         if (currentData.eszkoz_megnevezes && currentData.eszkoz_gyariszam) {
              const newRecord = {
-                'Cégnév': currentPartner.name,
-                'Cím': partnerDatabase.length > 0 ? findValue(partnerDatabase[0], 'Cím') : '',
+                'Cégnév': findValue(companyData, 'Cégnév') || currentPartner.name,
+                'Cím': findValue(companyData, 'Cím') || '',
                 'Megnevezés': currentData.eszkoz_megnevezes,
                 'Üzemeltetői azonosító': currentData.eszkoz_uzemeltetoi_azonosito,
                 'Típus': currentData.eszkoz_tipus,
@@ -535,21 +612,8 @@
             const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
             const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 
-            // 3. Fájl feltöltése és felülírása a böngésző 'fetch' API-jával
-            const accessToken = gapi.client.getToken().access_token;
-            const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${currentPartner.databaseFileId}?uploadType=media`, {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                },
-                body: blob
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error.message || `HTTP error! status: ${response.status}`);
-            }
+            await uploadFile(currentPartner.databaseFileId, blob);
+            partnerDatabase = [...updatedDataForSheet];
 
             notificationEl.className = 'text-center my-4 text-green-400 font-semibold h-auto';
             notificationEl.textContent = `Az 'adatbazis.xlsx' sikeresen frissítve a Drive-on!`;
@@ -563,14 +627,32 @@
             notificationEl.textContent = `Hiba a Drive-ra mentés során: ${errorDetails}`;
         }
     }
-    
+
+    async function uploadFile(fileId, blob) {
+        const accessToken = gapi.client.getToken().access_token;
+        const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': blob.type
+            },
+            body: blob
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error.message || `HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+    }
+
     async function handleProcessFilesEjk() {
         const statusEl = document.getElementById('generationStatusEjk');
         const selectedCheckboxes = document.querySelectorAll('#deviceListEjk input[type="checkbox"]:checked');
         const templateFileId = document.getElementById('templateSelectEjk').value;
         const expertName = document.getElementById('expertSelectEjk').value;
         const expertId = expertIds[expertName];
-
+    
         if (selectedCheckboxes.length === 0) {
             alert('Kérlek, válassz ki legalább egy eszközt a listából!');
             return;
@@ -583,89 +665,162 @@
             alert('Kérlek, válassz egy szakértőt!');
             return;
         }
-
+    
         statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Sablonfájl letöltése...</p>`;
-
+        let tempFolderId = null;
+    
         try {
-            // 1. Sablonfájl letöltése
+            // === 1. FÁZIS: Ideiglenes mappa létrehozása és PDF-ek generálása a Drive-on ===
+            const now = new Date();
+            const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+            const tempFolderName = `Jegyzokonyvek_temp_${timestamp}`;
+    
+            statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Ideiglenes mappa létrehozása...</p>`;
+            const folderMetadata = {
+                'name': tempFolderName,
+                'mimeType': 'application/vnd.google-apps.folder',
+                'parents': [currentPartner.folderId]
+            };
+            const folderResponse = await gapi.client.drive.files.create({ resource: folderMetadata, fields: 'id' });
+            tempFolderId = folderResponse.result.id;
+    
             const templateResponse = await gapi.client.drive.files.get({ fileId: templateFileId, alt: 'media' });
             const templateContent = templateResponse.body;
-
-            // 2. Dokumentumok generálása és mentése
+    
+            const generatedPdfIds = [];
+    
             for (let i = 0; i < selectedCheckboxes.length; i++) {
                 const checkbox = selectedCheckboxes[i];
                 const deviceIndex = parseInt(checkbox.dataset.deviceIndex, 10);
                 const deviceData = partnerDatabase[deviceIndex];
-                
                 const deviceName = findValue(deviceData, 'Megnevezés');
-                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Feldolgozás: ${i + 1} / ${selectedCheckboxes.length} (${deviceName})...</p>`;
+    
+                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>DOCX generálása: ${i + 1}/${selectedCheckboxes.length} (${deviceName})</p>`;
+                const docxData = await generateDocxData(deviceData, { name: expertName, id: expertId });
+                
+                // Új adatok hozzáadása a `partnerDatabase` megfelelő sorához
+                const originalDeviceData = partnerDatabase[deviceIndex];
+                originalDeviceData['Sorszám'] = docxData.sorszam;
+                originalDeviceData['Kelt'] = docxData.kelt;
+                originalDeviceData['Időbélyeg'] = docxData.idobelyeg;
+                originalDeviceData['Vizsgáló'] = docxData.szakerto_neve;
 
-                const generatedDoc = await generateDocx(templateContent, deviceData, { name: expertName, id: expertId });
-                
-                // --- DOCX -> PDF KONVERZIÓ GOOGLE DRIVE API-VAL ---
-                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Konvertálás PDF formátumba... (${i + 1}/${selectedCheckboxes.length})</p>`;
-                
-                let tempDocId;
+                const zip = new PizZip(templateContent);
+                const doc = new docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
+                doc.setData(docxData);
                 try {
-                    // 1. DOCX feltöltése ÉS konvertálása Google Docs-ra egy lépésben
-                    const tempFileName = `temp_conversion_${Date.now()}.docx`;
-                    const fileMetadata = { 
-                        'name': tempFileName, 
-                        'parents': [currentPartner.folderId],
-                        'mimeType': 'application/vnd.google-apps.document' // Konvertálás Google Docs-ra
-                    };
-                    const form = new FormData();
-                    form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
-                    form.append('file', generatedDoc);
-
-                    const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${gapi.client.getToken().access_token}` },
-                        body: form
-                    });
-                    const uploadedFile = await uploadRes.json();
-                    if (!uploadedFile.id) throw new Error('Fájl konvertálása Google Docs formátumra sikertelen.');
-                    tempDocId = uploadedFile.id;
-
-                    // 2. Exportálás PDF-ként a 'fetch' API-val
-                    const exportUrl = `https://www.googleapis.com/drive/v3/files/${tempDocId}/export?mimeType=application/pdf`;
-                    const pdfRes = await fetch(exportUrl, {
-                        method: 'GET',
-                        headers: { 'Authorization': `Bearer ${gapi.client.getToken().access_token}` }
-                    });
-                    if (!pdfRes.ok) throw new Error('PDF exportálás sikertelen.');
-                    const pdfBlob = await pdfRes.blob();
-                    
-                    // 3. PDF letöltése
-                    const fileName = `${findValue(deviceData, 'Megnevezés')}_${findValue(deviceData, 'Gyári szám')}_jegyzokonyv.pdf`.replace(/[^a-zA-Z0-9_.-]/g, '_');
-                    saveAs(pdfBlob, fileName);
-
-                } finally {
-                    // 4. Ideiglenes fájl törlése mindenképpen
-                    if (tempDocId) {
-                        await gapi.client.drive.files.delete({ fileId: tempDocId });
-                    }
+                    doc.render();
+                } catch (error) {
+                    console.error("Docxtemplater hiba:", JSON.stringify({error: error, data: docxData}));
+                    throw error;
                 }
+                const generatedDoc = doc.getZip().generate({
+                    type: "blob",
+                    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                });
+    
+                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>PDF konvertálása és mentése: ${i + 1}/${selectedCheckboxes.length}</p>`;
+                const pdfBlob = await convertDocxToPdf(generatedDoc);
+    
+                const pdfFileName = `${findValue(deviceData, 'Típus')}_${findValue(deviceData, 'Gyári szám')}_jkv.pdf`.replace(/[^a-zA-Z0-9_.-]/g, '_');
+                const pdfMetadata = { 'name': pdfFileName, 'parents': [tempFolderId] };
+                const pdfForm = new FormData();
+                pdfForm.append('metadata', new Blob([JSON.stringify(pdfMetadata)], { type: 'application/json' }));
+                pdfForm.append('file', pdfBlob);
+    
+                const pdfUploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${gapi.client.getToken().access_token}` },
+                    body: pdfForm
+                });
+                const uploadedPdf = await pdfUploadRes.json();
+                if (!uploadedPdf.id) throw new Error(`PDF feltöltése sikertelen: ${pdfFileName}`);
+                generatedPdfIds.push({ id: uploadedPdf.id, name: pdfFileName });
             }
-
+    
+            // === 2. FÁZIS: PDF-ek letöltése a böngészőbe és ZIP készítése ===
+            statusEl.innerHTML = `<div class="loader mx-auto"></div><p>ZIP archívum készítése...</p>`;
+            const zip = new JSZip();
+    
+            for (let i = 0; i < generatedPdfIds.length; i++) {
+                const fileInfo = generatedPdfIds[i];
+                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Fájl hozzáadása a ZIP-hez: ${i + 1}/${generatedPdfIds.length} (${fileInfo.name})</p>`;
+                const fileResponse = await gapi.client.drive.files.get({ fileId: fileInfo.id, alt: 'media' });
+                zip.file(fileInfo.name, fileResponse.body, { binary: true });
+            }
+    
+            statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Véglegesítés... A letöltés hamarosan indul.</p>`;
+            const zipBlob = await zip.generateAsync({ type: "blob" });
+            saveAs(zipBlob, `Jegyzokonyvek_${currentPartner.name}_${timestamp}.zip`);
+    
             statusEl.className = 'text-center my-4 text-green-400 font-semibold h-auto';
-            statusEl.textContent = `${selectedCheckboxes.length} darab PDF jegyzőkönyv sikeresen legenerálva és letöltve.`;
+            statusEl.textContent = `Sikeres generálás! A(z) ${selectedCheckboxes.length} jegyzőkönyvet tartalmazó ZIP fájl letöltése elindult.`;
 
+            // Az adatbázis frissítése a Drive-on az új metaadatokkal
+            statusEl.innerHTML += '<p class="text-sm text-slate-400 mt-2">Adatbázis frissítése a metaadatokkal...</p>';
+            const workbook = XLSX.utils.book_new();
+            const worksheet = XLSX.utils.json_to_sheet(partnerDatabase);
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Adatok');
+            const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            await uploadFile(currentPartner.databaseFileId, blob);
+    
         } catch (err) {
             const errorDetails = err.result?.error?.message || err.message || err.toString();
             statusEl.className = 'text-center my-4 text-red-400 font-semibold h-auto';
-            statusEl.textContent = `Hiba a PDF konverzió során: ${errorDetails}`;
+            statusEl.textContent = `Hiba a feldolgozás során: ${errorDetails}`;
+        } finally {
+            // === 3. FÁZIS: Ideiglenes mappa törlése ===
+            if (tempFolderId) {
+                statusEl.innerHTML += '<p class="text-sm text-slate-400 mt-2">Ideiglenes fájlok törlése a Drive-ról...</p>';
+                try {
+                    await gapi.client.drive.files.delete({ fileId: tempFolderId });
+                    statusEl.innerHTML = statusEl.innerHTML.replace('<p class="text-sm text-slate-400 mt-2">Ideiglenes fájlok törlése a Drive-ról...</p>', '<p class="text-sm text-slate-500 mt-2">Takarítás befejezve.</p>');
+                } catch (cleanupErr) {
+                    console.error("Hiba az ideiglenes mappa törlésekor:", cleanupErr);
+                    statusEl.innerHTML += '<p class="text-sm text-red-500 mt-1">Az ideiglenes mappa törlése sikertelen. Kérlek, manuálisan töröld a Drive-ról!</p>';
+                }
+            }
         }
     }
 
-    async function generateDocx(templateContent, data, expert) {
-        const zip = new PizZip(templateContent);
-        const doc = new docxtemplater(zip, {
-            paragraphLoop: true,
-            linebreaks: true,
-        });
+    async function convertDocxToPdf(docxBlob) {
+        let tempDocId = null;
+        try {
+            const tempFileName = `temp_conversion_${Date.now()}.docx`;
+            const fileMetadata = {
+                'name': tempFileName,
+                'parents': [currentPartner.folderId],
+                'mimeType': 'application/vnd.google-apps.document' // Konvertálás Google Docs-ra
+            };
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
+            form.append('file', docxBlob);
+    
+            const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${gapi.client.getToken().access_token}` },
+                body: form
+            });
+            const uploadedFile = await uploadRes.json();
+            if (!uploadedFile.id) throw new Error('Fájl konvertálása Google Docs formátumra sikertelen.');
+            tempDocId = uploadedFile.id;
+    
+            const exportUrl = `https://www.googleapis.com/drive/v3/files/${tempDocId}/export?mimeType=application/pdf`;
+            const pdfRes = await fetch(exportUrl, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${gapi.client.getToken().access_token}` }
+            });
+            if (!pdfRes.ok) throw new Error('PDF exportálás sikertelen.');
+            return await pdfRes.blob();
+        } finally {
+            if (tempDocId) {
+                await gapi.client.drive.files.delete({ fileId: tempDocId });
+            }
+        }
+    }
 
-        // Teljes szótár az Excel oszlopnevek és a DOCX helyőrzők között
+    async function generateDocxData(data, expert) {
         const keyMap = {
             'Cégnév': 'uzemelteto_cegnev',
             'Cím':  'uzemelteto_cim',
@@ -722,20 +877,7 @@
         templateData.szakerto_neve = expert.name || '';
         templateData.szakerto_azonosito = expert.id || '';
 
-        doc.setData(templateData);
-
-        try {
-            // A render() parancs végzi el a tényleges behelyettesítést.
-            doc.render();
-        } catch (error) {
-            console.error("Docxtemplater hiba:", JSON.stringify({error: error, data: templateData}));
-            throw error;
-        }
-
-        return doc.getZip().generate({
-            type: "blob",
-            mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        });
+        return templateData;
     }
     
     let sortState = { key: 'Megnevezés', direction: 'asc' };
