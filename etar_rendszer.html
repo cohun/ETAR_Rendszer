@@ -129,13 +129,15 @@
     // ===================================================================================
     // FONTOS BEÁLLÍTÁSOK
     // ===================================================================================
-    const API_KEY = 'AIzaSyBfcVv4o1nhi26mncDin_P1dSucArZt1MY';
-    const CLIENT_ID = '275625800423-lm3nn50kiq6ld3n56vtfocb627fvbek9.apps.googleusercontent.com';
-    const ROOT_FOLDER_ID = '1spypeyZmJ19qTHgVuFkaucu7zvI9qmuv';
+    const API_KEY = 'AIzaSyBfcVv4o1nhi26mncDin_P1dSucArZt1MY'; // Ezt később obfuszkáljuk
+    const CLIENT_ID = '275625800423-lm3nn50kiq6ld3n56vtfocb627fvbek9.apps.googleusercontent.com'; // Ezt később obfuszkáljuk
+    const ROUTING_TABLE_FOLDER_ID = '1pzigXXQ7-Ed-PGlhFeDm7fzG6W3Lzptp'; // Az 'Utvonal' mappa ID-ja
+    const MAIN_ROOT_FOLDER_ID = '1spypeyZmJ19qTHgVuFkaucu7zvI9qmuv'; // A központi EJK mappa ID-ja
     // ===================================================================================
 
     const SCOPES = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
 
+    let userRootFolderId = null; // Dinamikusan fogjuk beállítani
     let gapiInited = false;
     let gisInited = false;
     let tokenClient;
@@ -190,12 +192,12 @@
     // --- GOOGLE API INICIALIZÁLÁS ---
     function gapiLoaded() { gapi.load('client', initializeGapiClient); }
     async function initializeGapiClient() {
+        // Az apiKey-t eltávolítjuk, mert a felhasználói adatokhoz (pl. fájllistázás)
+        // a bejelentkezés után kapott access_token-t kell használni, nem az API kulcsot.
         await gapi.client.init({
-            apiKey: API_KEY,
             discoveryDocs: [
                 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
-                'https://people.googleapis.com/$discovery/rest?version=v1'
-            ],
+                'https://people.googleapis.com/$discovery/rest?version=v1'            ],
         });
         gapiInited = true;
         checkInitStatus();
@@ -303,43 +305,59 @@
     
     // --- SZEREPKÖR-KEZELÉS ---
     async function checkUserRole() {
-        if (!userProfile) return;
-        try {
-            await gapi.client.drive.files.get({ fileId: ROOT_FOLDER_ID, fields: 'id' });
+        if (!userProfile || !userProfile.email) {
+            showUnauthorizedUser("Nem sikerült lekérni az e-mail címet a jogosultság ellenőrzéséhez.");
+            return;
+        }
+
+        setStatus('loadingStatus', '<div class="loader mx-auto"></div><p class="mt-2">Jogosultsági útvonal keresése...</p>');
+        const route = await getUserRoute(userProfile.email);
+
+        if (!route) {
+            showUnauthorizedUser(`Nincs jogosultság definiálva a(z) ${userProfile.email} címhez.`);
+            return;
+        }
+
+        userRootFolderId = route.folder_id;
+
+        if (userRootFolderId === MAIN_ROOT_FOLDER_ID) {
+            // EJK Felhasználó: Hozzáférése van a fő mappához
             showEjkScreen();
-        } catch (err) {
-            try {
-                const response = await gapi.client.drive.files.list({
-                    q: `sharedWithMe and '${ROOT_FOLDER_ID}' in parents and trashed = false`,
-                    fields: 'files(id, name, parents)',
-                });
-                if (response.result.files.length === 1) {
-                    showEnyScreen(response.result.files[0]);
-                } else {
-                    showUnauthorizedUser();
-                }
-            } catch (enyError) {
-                showUnauthorizedUser();
+        } else {
+            // ENY Felhasználó: Hozzáférése van egy specifikus partnermappához
+            showEnyScreen({ id: userRootFolderId, name: route.folder_name || 'Partner Mappa' });
+        }
+    }
+
+    async function getUserRoute(userEmail) {
+        try {
+            const response = await gapi.client.drive.files.list({
+                q: `'${ROUTING_TABLE_FOLDER_ID}' in parents and name='utvonalak.xlsx' and trashed=false`,
+                fields: 'files(id)'
+            });
+            if (!response.result.files || response.result.files.length === 0) {
+                throw new Error("Az 'utvonalak.xlsx' fájl nem található.");
             }
+            const fileId = response.result.files[0].id;
+            const fileResponse = await gapi.client.drive.files.get({ fileId: fileId, alt: 'media' });
+            const workbook = XLSX.read(fileResponse.body, { type: 'binary' });
+            const routingData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+            
+            return routingData.find(row => findValue(row, 'email').toLowerCase() === userEmail.toLowerCase());
+        } catch (err) {
+            const errorDetails = err.result?.error?.message || err.message || err.toString();
+            setStatus('loadingStatus', `Hiba a jogosultsági tábla olvasása közben: ${errorDetails}`, true);
+            return null;
         }
     }
 
     async function showEjkScreen() {
-        showScreen('ejkSelect');
-        const currentPartnerInfoDiv = document.getElementById('currentPartnerInfo');
-        if (currentPartner.name) {
-            currentPartnerInfoDiv.innerHTML = `
-                <p class="text-sm text-blue-300">Jelenleg aktív adatbázis:</p>
-                <p class="font-bold text-lg text-green-400">${currentPartner.name}</p>
-            `;
-        } else {
-            currentPartnerInfoDiv.innerHTML = '';
-        }
+        showScreen('ejkSelect'); // A partner-választó képernyőre navigálunk
         document.getElementById('ejkUserInfo').textContent = `Bejelentkezve: ${userProfile.name} (${userProfile.email})`;
         setStatus('ejkStatus', '<div class="loader mx-auto"></div><p class="mt-2">Partnermappák betöltése...</p>');
         try {
             const response = await gapi.client.drive.files.list({
-                q: `'${ROOT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+                q: `'${userRootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
                 fields: 'files(id, name)', orderBy: 'name'
             });
             const partners = response.result.files;
@@ -348,22 +366,13 @@
             if (partners && partners.length > 0) {
                 partners.forEach(partner => {
                     const button = document.createElement('button');
-                    // Alap stílusok
-                    let buttonClasses = 'w-full text-left p-3 rounded-md transition-all font-semibold flex items-center justify-between';
-                    // Kiemelt stílus, ha ez az aktív partner
-                    if (partner.id === currentPartner.folderId) {
-                        buttonClasses += ' bg-green-700 ring-2 ring-green-400';
-                        button.innerHTML = `<span>${partner.name}</span><span class="text-xs font-normal bg-green-900/50 px-2 py-1 rounded">Betöltve</span>`;
-                    } else {
-                        buttonClasses += ' bg-blue-800 hover:bg-blue-700';
-                        button.textContent = partner.name; // Ez a sor hiányzott
-                    }
-                    button.className = buttonClasses;
+                    button.className = 'w-full text-left p-3 rounded-md transition-all font-semibold bg-blue-800 hover:bg-blue-700';
+                    button.textContent = partner.name;
                     button.dataset.partnerId = partner.id;
                     button.dataset.partnerName = partner.name;
                     partnerListDiv.appendChild(button);
                 });
-                setStatus('ejkStatus', currentPartner.name ? `A(z) '${currentPartner.name}' adatbázisa sikeresen betöltve.` : 'Válassz egy partnert a listából a folytatáshoz.');
+                setStatus('ejkStatus', 'Válassz egy partnert a listából a folytatáshoz.');
             } else {
                  setStatus('ejkStatus', 'Nem találhatók partnermappák a központi tárolóban.', true);
             }
@@ -385,7 +394,12 @@
         }
     }
 
-    async function showEnyScreen(partnerFolder) { /* ... */ }
+    async function showEnyScreen(partnerFolder) { 
+        // TODO: Az ENY felhasználói felület implementálása.
+        // Egyelőre egy üzenetet jelenítünk meg.
+        showScreen('enyMain');
+        document.getElementById('enyMainScreen').innerHTML = `<div class="card text-center"><h1 class="text-2xl font-bold">Üdv, ENY Felhasználó!</h1><p class="mt-4">A te mappád: ${partnerFolder.name} (${partnerFolder.id})</p><p class="mt-6">Az ENY felület fejlesztés alatt áll.</p><button id="signOutButtonEny" class="btn btn-secondary mt-8">Kijelentkezés</button></div>`;
+    }
 
     // --- ADATBÁZIS KEZELÉS ---
     async function loadDatabase(folderId, statusElementId){
@@ -470,7 +484,7 @@
         if (token) {
             google.accounts.oauth2.revoke(token.access_token, () => {
                 gapi.client.setToken('');
-                userProfile = null; partnerDatabase = []; currentPartner = {};
+                userProfile = null; userRootFolderId = null; partnerDatabase = []; currentPartner = {};
                 companyData = {}; showScreen('login');
                 setStatus('loadingStatus', '');
             });
