@@ -152,6 +152,7 @@
     let companyData = {};
     let newDeviceData = [];
     let lastDeviceData = {};
+    let currentInspectedDevice = null; // Az "Új vizsgálat" képernyőn aktuálisan kiválasztott eszköz
     
     const expertIds = {
         "Nagy Imre": "P94B 146259",
@@ -273,7 +274,7 @@
                 }
 
                 if (buttonTarget.id === 'finishNewInspectionBtn') {
-                    resetNewInspectionScreen();
+                    handleFinishNewInspection();
                 }
             }
             
@@ -303,6 +304,15 @@
                 document.querySelectorAll('#deviceListEjk input[type="checkbox"]').forEach(cb => {
                     cb.checked = isChecked;
                 });
+            }
+
+            // Eseménykezelő az "Új vizsgálat" képernyő beviteli mezőihez
+            const newInspectionInput = event.target.closest('#templateSelectNewInspection, #expertSelectNewInspection, #inspectionLocationInput, #inspectionDateInput, #inspectionTypeNew, #nextInspectionDateNew, #inspectionResultNew');
+            if (newInspectionInput) {
+                // A "Kész" gomb állapotának frissítése, ha a felső 4 mező bármelyike változik
+                if (document.getElementById('newInspectionDataEntry')) {
+                    updateNewInspectionFinishButtonState();
+                }
             }
         });
     }
@@ -601,6 +611,7 @@
         const device = partnerDatabase.find(d => findValue(d, 'Gyári szám').toLowerCase() === serialNumber.toLowerCase());
 
         if (device) {
+            currentInspectedDevice = device; // Eltároljuk a megtalált eszközt
             let detailsHtml = '<h3 class="text-xl font-bold mb-4 text-green-300">Megtalált eszköz adatai</h3>';
             detailsHtml += '<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-left">';
             
@@ -617,7 +628,11 @@
             });
             detailsHtml += '</div>' + getNewInspectionDataFormHtml(); // Hozzáadjuk az új adatbeviteli űrlapot
             resultDiv.innerHTML = detailsHtml;
+
+            // A "Kész" gomb kezdeti állapotának beállítása
+            updateNewInspectionFinishButtonState();
         } else {
+            currentInspectedDevice = null; // Nincs találat, töröljük a referenciát
             resultDiv.innerHTML = `
                 <p class="text-red-400 font-bold mb-4">Nem található eszköz ezzel a gyári számmal: "${serialNumber}"</p>
                 <p class="mb-4">Szeretnéd új eszközként rögzíteni?</p>
@@ -630,6 +645,7 @@
         const resultDiv = document.getElementById('deviceSearchResult');
         const serialInput = document.getElementById('serialNumberInput');
 
+        currentInspectedDevice = null; // Töröljük a referenciát
         resultDiv.innerHTML = '<p class="text-gray-400">A keresés eredménye itt fog megjelenni.</p>';
         if(serialInput) {
             serialInput.value = '';
@@ -637,29 +653,114 @@
         }
     }
 
+    async function handleFinishNewInspection() {
+        if (!currentInspectedDevice) {
+            alert("Hiba: Nincs kiválasztott eszköz a mentéshez.");
+            return;
+        }
+
+        const finishBtn = document.getElementById('finishNewInspectionBtn');
+        const originalBtnText = finishBtn.innerHTML;
+        finishBtn.disabled = true;
+        finishBtn.innerHTML = `<div class="loader mx-auto" style="height: 24px; width: 24px; border-width: 3px;"></div><span class="ml-2">Mentés folyamatban...</span>`;
+
+        try {
+            // 1. Adatok összegyűjtése az űrlapokról
+            const newData = {
+                'Vizsgálat helye': document.getElementById('inspectionLocationInput').value,
+                'Vizsgálat időpontja': document.getElementById('inspectionDateInput').value,
+                'Vizsgáló': document.getElementById('expertSelectNewInspection').value,
+                'Vizsgálat jellege': document.getElementById('inspectionTypeNew').value,
+                'Következő időszakos vizsgálat': document.getElementById('nextInspectionDateNew').value,
+                'Következő terhelési próba': document.getElementById('nextLoadTestDateNew').value,
+                'Megállapítások': document.getElementById('inspectionResultNew').value,
+                'Feltárt hiba': document.getElementById('foundFaultNew').value,
+                'Felhasznált anyagok, intézkedés': document.getElementById('actionsTakenNew').value,
+            };
+
+            // 2. Megfelelő rekord megkeresése és frissítése a `partnerDatabase`-ben
+            const deviceIndex = partnerDatabase.findIndex(d => findValue(d, 'Gyári szám') === findValue(currentInspectedDevice, 'Gyári szám'));
+            if (deviceIndex === -1) {
+                throw new Error("A frissítendő eszköz nem található az adatbázisban.");
+            }
+
+            // A meglévő adatok frissítése az újakkal
+            Object.keys(newData).forEach(key => {
+                partnerDatabase[deviceIndex][key] = newData[key];
+            });
+
+            // 3. Excel fájl generálása és feltöltése a Drive-ra
+            const workbook = XLSX.utils.book_new();
+            const worksheet = XLSX.utils.json_to_sheet(partnerDatabase);
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Adatok');
+            const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+            await uploadFile(currentPartner.databaseFileId, blob);
+
+            // 4. Sikeres mentés után a felület visszaállítása
+            alert('Vizsgálati adatok sikeresen mentve!');
+            resetNewInspectionScreen();
+
+        } catch (err) {
+            alert(`Hiba történt a mentés során: ${err.message}`);
+        } finally {
+            finishBtn.disabled = false;
+            finishBtn.innerHTML = originalBtnText;
+        }
+    }
+
+    function updateNewInspectionFinishButtonState() {
+        const finishBtn = document.getElementById('finishNewInspectionBtn');
+        const expertSelect = document.getElementById('expertSelectNewInspection');
+        const templateSelect = document.getElementById('templateSelectNewInspection');
+        const locationInput = document.getElementById('inspectionLocationInput');
+        const dateInput = document.getElementById('inspectionDateInput');
+        // Új mezők
+        const inspectionTypeNew = document.getElementById('inspectionTypeNew');
+        const nextInspectionDateNew = document.getElementById('nextInspectionDateNew');
+        const inspectionResultNew = document.getElementById('inspectionResultNew');
+
+        if (finishBtn && expertSelect && templateSelect && locationInput && dateInput && inspectionTypeNew && nextInspectionDateNew && inspectionResultNew) {
+            const isFormValid = templateSelect.value && 
+                              expertSelect.value && 
+                              locationInput.value.trim() && 
+                              dateInput.value &&
+                              inspectionTypeNew.value &&
+                              nextInspectionDateNew.value &&
+                              inspectionResultNew.value.trim();
+            finishBtn.disabled = !isFormValid;
+            finishBtn.title = isFormValid ? 'Befejezés és ugrás a következő eszközre' : 'A folytatáshoz kérjük, töltse ki az összes kötelező vizsgálati adatot (sablon, szakértő, hely, időpont, vizsgálat jellege, következő vizsgálat dátuma, megállapítások)!';
+        }
+    }
+
     function getNewInspectionDataFormHtml() {
         const today = new Date().toISOString().slice(0, 10);
         return `
             <div id="newInspectionDataEntry" class="mt-6 pt-6 border-t border-blue-700">
-                <h3 class="text-xl font-bold mb-4 text-teal-300">Új vizsgálati adatok rögzítése</h3>
+                <h3 class="text-xl font-bold mb-4 text-teal-300">Vizsgálati adatok rögzítése</h3>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-left">
                     <div class="md:col-span-2">
                         <label class="block text-sm mb-1">Vizsgálat jellege</label>
-                        <select name="vizsgalat_jellege_new" class="input-field"><option>Időszakos vizsgálat</option><option>Szerkezeti vizsgálat</option><option>Fővizsgálat</option></select>
+                        <select name="vizsgalat_jellege_new" id="inspectionTypeNew" class="input-field" required>
+                            <option value="" disabled selected>Válassz vizsgálati jelleget...</option>
+                            <option>Szerkezeti vizsgálat</option>
+                            <option>Fővizsgálat</option>
+                        </select>
                     </div>
                     <div class="md:col-span-2">
                         <label class="block text-sm mb-1">Következő időszakos vizsgálat</label>
-                        <input name="kov_idoszakos_vizsgalat_new" type="date" class="input-field" value="${today}">
+                        <input name="kov_idoszakos_vizsgalat_new" id="nextInspectionDateNew" type="date" class="input-field" value="${today}">
                     </div>
                     <div class="md:col-span-2">
                         <label class="block text-sm mb-1">Következő Terhelési próba</label>
-                        <input name="kov_terhelesi_proba_new" type="date" class="input-field">
+                        <input name="kov_terhelesi_proba_new" id="nextLoadTestDateNew" type="date" class="input-field">
                     </div>
-                    <div class="md:col-span-2"><label class="block text-sm mb-1">Vizsgálat eredménye (Megállapítások)</label><textarea name="megallapitasok_new" rows="3" class="input-field"></textarea></div>
-                    <div class="md:col-span-2"><label class="block text-sm mb-1">Feltárt hiba</label><textarea name="hiba_new" rows="3" class="input-field"></textarea></div>
-                    <div class="md:col-span-2"><label class="block text-sm mb-1">Felhasznált anyagok, intézkedés</label><textarea name="intezkedes_new" rows="3" class="input-field"></textarea></div>
+                    <div class="md:col-span-2"><label class="block text-sm mb-1">Vizsgálat eredménye (Megállapítások)</label><textarea name="megallapitasok_new" id="inspectionResultNew" rows="3" class="input-field"></textarea></div>
+                    <div class="md:col-span-2"><label class="block text-sm mb-1">Feltárt hiba</label><textarea name="hiba_new" id="foundFaultNew" rows="3" class="input-field"></textarea></div>
+                    <div class="md:col-span-2"><label class="block text-sm mb-1">Felhasznált anyagok, intézkedés</label><textarea name="intezkedes_new" id="actionsTakenNew" rows="3" class="input-field"></textarea></div>
                 </div>
-                <button id="finishNewInspectionBtn" class="btn btn-success mt-6 w-full">Kész, következő eszköz</button>
+                <button id="finishNewInspectionBtn" class="btn btn-success mt-6 w-full" disabled>Kész, következő eszköz</button>
             </div>`;
     }
 
@@ -824,8 +925,6 @@
         const statusEl = document.getElementById('generationStatusEjk');
         const selectedCheckboxes = document.querySelectorAll('#deviceListEjk input[type="checkbox"]:checked');
         const templateFileId = document.getElementById('templateSelectEjk').value;
-        const expertName = document.getElementById('expertSelectEjk').value;
-        const expertId = expertIds[expertName];
     
         if (selectedCheckboxes.length === 0) {
             alert('Kérlek, válassz ki legalább egy eszközt a listából!');
@@ -833,10 +932,6 @@
         }
         if (!templateFileId) {
             alert('Kérlek, válassz egy jegyzőkönyv sablont!');
-            return;
-        }
-        if (!expertName || !expertId) {
-            alert('Kérlek, válassz egy szakértőt!');
             return;
         }
     
@@ -868,6 +963,14 @@
                 const deviceIndex = parseInt(checkbox.dataset.deviceIndex, 10);
                 const deviceData = partnerDatabase[deviceIndex];
                 const deviceName = findValue(deviceData, 'Megnevezés');
+
+                // Szakértő adatainak kinyerése közvetlenül az eszköz adataiból
+                const expertName = findValue(deviceData, 'Vizsgáló');
+                const expertId = expertIds[expertName];
+                if (!expertName || !expertId) {
+                    // Ha valamiért hiányzik a vizsgáló, átugorjuk a generálást ennél az eszköznél
+                    throw new Error(`A(z) "${deviceName}" eszközhöz nincs érvényes vizsgáló rendelve. A generálás leállt.`);
+                }
     
                 statusEl.innerHTML = `<div class="loader mx-auto"></div><p>DOCX generálása: ${i + 1}/${selectedCheckboxes.length} (${deviceName})</p>`;
                 const docxData = await generateDocxData(deviceData, { name: expertName, id: expertId });
@@ -1018,14 +1121,13 @@
             'Következő terhelési próba': 'kovetkezo_terhelesi_proba',
         };
 
-        const templateData = {};
-        // 1. Adatok átmásolása az Excelből a keyMap alapján
-        for (const key in data) {
-            const templateKey = keyMap[key];
-            if (templateKey) {
-                templateData[templateKey] = findValue(data, key);
-            }
-        }
+        const templateData = {}; 
+        // 1. Adatok átmásolása az Excelből, üres értékek cseréje kötőjelre
+        Object.keys(keyMap).forEach(excelKey => {
+            const templateKey = keyMap[excelKey];
+            const value = findValue(data, excelKey);
+            templateData[templateKey] = value.trim() === '' ? '-' : value;
+        });
 
         // 2. Automatikusan generált adatok hozzáadása
         const now = new Date();
@@ -1093,13 +1195,16 @@
             const deviceSerial = findValue(device, 'Gyári szám');
             const deviceId = findValue(device, 'Üzemeltetői azonosító');
             return `
-                <label for="device_${originalIndex}" class="flex items-center p-2 bg-blue-900/50 rounded-md hover:bg-blue-800/70 transition-colors cursor-pointer">
-                    <input type="checkbox" id="device_${originalIndex}" data-device-index="${originalIndex}" class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                <label for="device_${originalIndex}" class="flex items-center p-2 bg-blue-900/50 rounded-md transition-colors ${!findValue(device, 'Megállapítások') ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-800/70 cursor-pointer'}">
+                    <input type="checkbox" id="device_${originalIndex}" data-device-index="${originalIndex}" 
+                        class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" 
+                        ${!findValue(device, 'Megállapítások') ? 'disabled' : ''} 
+                        title="${!findValue(device, 'Megállapítások') ? 'Jegyzőkönyv nem generálható, mert nincs rögzítve vizsgálati megállapítás.' : 'Kiválasztás jegyzőkönyv generáláshoz'}">
                     <span class="ml-3 text-sm font-semibold w-1/4 truncate px-2" title="${deviceName}">${deviceName}</span>
                     <span class="text-sm text-gray-400 w-1/4 truncate px-2" title="${deviceType}">${deviceType || 'N/A'}</span>
                     <span class="text-sm text-gray-400 w-1/6 truncate px-2" title="${deviceLength}">${deviceLength || 'N/A'}</span>
                     <span class="text-sm text-gray-400 w-1/4 truncate px-2" title="${deviceId}">${deviceId || 'N/A'}</span>
-                    <span class="text-sm text-gray-400 w-1/4 truncate px-2" title="${deviceSerial}">${deviceSerial || 'N/A'}</span>
+                    <span class="text-sm text-gray-400 w-1/4 truncate px-2" title="${deviceSerial}">${deviceSerial}</span>
                 </label>
             `;
         }).join('');
@@ -1303,20 +1408,11 @@
                             <p id="templateStatusEjk" class="text-sm text-yellow-400 mt-2 h-4"></p>
                         </div>
                         <div>
-                            <h3 class="text-lg font-semibold mb-3">3. Szakértő kiválasztása</h3>
-                            <select id="expertSelectEjk" class="input-field" required>
-                                <option value="" disabled selected>Válassz egy szakértőt...</option>
-                                <option value="Nagy Imre">Nagy Imre</option>
-                                <option value="Gerőly Iván">Gerőly Iván</option>
-                                <option value="Szadlon Norbert">Szadlon Norbert</option>
-                                <option value="Bagyinszki Lóránt">Bagyinszki Lóránt</option>
-                            </select>
-                        </div>
-                        <div>
-                            <h3 class="text-lg font-semibold mb-3">3. Generálás</h3>
+                            <h3 class="text-lg font-semibold mb-3">3. Generálás indítása</h3>
                             <button id="processFilesBtnEjk" class="btn btn-success w-full" disabled>Jegyzőkönyvek generálása</button>
                             <div id="generationStatusEjk" class="text-center my-4 font-semibold h-12"></div>
                         </div>
+                        <div class="mt-auto"></div> <!-- Pushes content up -->
                     </div>
                 </div>
                 <div class="mt-8 text-left">
