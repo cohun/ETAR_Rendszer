@@ -37,6 +37,7 @@
         .btn-primary { @apply bg-blue-600 hover:bg-blue-700; }
         .btn-secondary { @apply bg-slate-600 hover:bg-slate-700; }
         .btn-success { @apply bg-green-600 hover:bg-green-700; }
+        .btn-info { @apply bg-teal-600 hover:bg-teal-700; }
         .btn-danger { @apply bg-red-600 hover:bg-red-700; }
         .card { @apply bg-blue-950/50 p-6 sm:p-8 rounded-xl shadow-2xl border border-blue-800; }
         .loader {
@@ -97,9 +98,10 @@
                     <div class="w-32"></div> <!-- Placeholder for spacing -->
                 </div>
                 <h1 class="text-3xl sm:text-4xl font-bold mb-8">ETAR Jegyzőkönyv Készítő (EJK)</h1>
-                <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                    <button id="ejkNewEntryBtn" class="btn btn-primary text-lg">1. Új adat bevitel</button>
-                    <button id="ejkReadExcelBtn" class="btn btn-secondary text-lg">2. Jegyzőkönyv Készítés</button>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 justify-center">
+                    <button id="ejkNewDeviceBtn" class="btn btn-primary text-lg">1. Új eszköz feltöltés</button>
+                    <button id="ejkNewInspectionBtn" class="btn btn-info text-lg">2. Új vizsgálat</button>
+                    <button id="ejkGenerateProtocolsBtn" class="btn btn-success text-lg">3. Jegyzőkönyv generálás</button>
                 </div>
             </div>
         </div>
@@ -107,6 +109,7 @@
         <div id="deviceDetailsScreen" class="screen"></div>
         <div id="dataEntryScreen" class="screen"></div>
         <div id="ejkGenerateDocsScreen" class="screen"></div>
+        <div id="newInspectionScreen" class="screen"></div>
     </div>
     
     <!-- Megerősítő Modal -->
@@ -141,6 +144,7 @@
     let gapiInited = false;
     let gisInited = false;
     let tokenClient;
+    let gapiClientInitedPromise;
     let userProfile = null;
     
     let currentPartner = {};
@@ -191,13 +195,16 @@
 
     // --- GOOGLE API INICIALIZÁLÁS ---
     function gapiLoaded() { gapi.load('client', initializeGapiClient); }
-    async function initializeGapiClient() {
-        // Az apiKey-t eltávolítjuk, mert a felhasználói adatokhoz (pl. fájllistázás)
-        // a bejelentkezés után kapott access_token-t kell használni, nem az API kulcsot.
-        await gapi.client.init({
-            discoveryDocs: [
-                'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
-                'https://people.googleapis.com/$discovery/rest?version=v1'            ],
+    function initializeGapiClient() {
+        gapiClientInitedPromise = new Promise(async (resolve, reject) => {
+            try {
+                await gapi.client.init({
+                    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest', 'https://people.googleapis.com/$discovery/rest?version=v1'],
+                });
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
         });
         gapiInited = true;
         checkInitStatus();
@@ -228,6 +235,7 @@
             details: document.getElementById('deviceDetailsScreen'),
             dataEntry: document.getElementById('dataEntryScreen'),
             ejkGenerateDocs: document.getElementById('ejkGenerateDocsScreen'),
+            newInspection: document.getElementById('newInspectionScreen'),
         };
 
         // KÖZPONTI ESEMÉNYKEZELŐ (EVENT DELEGATION)
@@ -240,18 +248,32 @@
                 if (buttonTarget.id === 'signOutButtonEjk' || buttonTarget.id === 'signOutButtonEny') handleSignOut();
                 if (buttonTarget.id === 'backToPartnerSelectBtn') showScreen('ejkSelect');
                 if (buttonTarget.id === 'backToEjkMainBtn') showScreen('ejkMain');
-                if (buttonTarget.id === 'ejkNewEntryBtn') showEjkDataEntry();
-                if (buttonTarget.id === 'ejkReadExcelBtn') showEjkDocGeneration();
+                if (buttonTarget.id === 'ejkNewDeviceBtn') showEjkDataEntry();
+                if (buttonTarget.id === 'ejkNewInspectionBtn') showNewInspectionScreen();
+                if (buttonTarget.id === 'ejkGenerateProtocolsBtn') showEjkDocGeneration();
                 if (buttonTarget.id === 'addAnotherDeviceBtnEjk') handleAddAnotherDeviceEjk();
                 if (buttonTarget.id === 'saveToDriveBtnEjk') showSaveConfirmation();
                 if (buttonTarget.id === 'processFilesBtnEjk') handleProcessFilesEjk();
                 if (buttonTarget.id === 'downloadDbBtnEny') handleDownloadDatabase();
+                if (buttonTarget.id === 'registerNewDeviceFromSearchBtn') {
+                    const serialNumber = buttonTarget.dataset.serialNumber;
+                    showEjkDataEntry({ eszkoz_gyariszam: serialNumber });
+                }
                 
                 if (buttonTarget.dataset.partnerId) {
                      selectPartner({
                         name: buttonTarget.dataset.partnerName,
                         id: buttonTarget.dataset.partnerId,
                      });
+                }
+
+                if (buttonTarget.id === 'searchDeviceBySerialBtn') {
+                    event.preventDefault(); // Form submit megelőzése
+                    handleSearchDeviceBySerial();
+                }
+
+                if (buttonTarget.id === 'finishNewInspectionBtn') {
+                    resetNewInspectionScreen();
                 }
             }
             
@@ -293,6 +315,10 @@
                 return;
             }
             setStatus('loadingStatus', '<div class="loader mx-auto"></div><p class="mt-2">Bejelentkezés sikeres. Jogosultságok ellenőrzése...</p>');
+            
+            // Megvárjuk, amíg a GAPI kliens teljesen inicializálódik, és csak utána állítjuk be a tokent.
+            await gapiClientInitedPromise;
+            gapi.client.setToken(resp);
             await fetchUserProfile();
             if (userProfile) await checkUserRole();
         };
@@ -518,10 +544,10 @@
     }
     
     // --- EJK FUNKCIÓK ---
-    function showEjkDataEntry() {
+    function showEjkDataEntry(prefillData = {}) {
         newDeviceData = [];
         const screen = screens.dataEntry;
-        screen.innerHTML = getEjkDataEntryHtml();
+        screen.innerHTML = getEjkDataEntryHtml(prefillData);
         showScreen('dataEntry');
     }
 
@@ -530,7 +556,113 @@
         screen.innerHTML = getEjkDocGenerationHtml();
         showScreen('ejkGenerateDocs');
     }
+
+    function showNewInspectionScreen() {
+        const screen = screens.newInspection;
+        screen.innerHTML = getNewInspectionScreenHtml(); // HTML generálás
+        showScreen('newInspection');
+        document.getElementById('serialNumberInput').focus();
+
+        // Sablonok dinamikus betöltése az új képernyőre
+        setTimeout(async () => {
+            const selectEl = document.getElementById('templateSelectNewInspection');
+            const statusEl = document.getElementById('templateStatusNewInspection');
+            try {
+                const response = await gapi.client.drive.files.list({
+                    q: `'${currentPartner.folderId}' in parents and mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document' and trashed=false`,
+                    fields: 'files(id, name)'
+                });
+                if (response.result.files && response.result.files.length > 0) {
+                    selectEl.innerHTML = ''; // Töröljük a "betöltés" opciót
+                    response.result.files.forEach(file => {
+                        const option = new Option(file.name, file.id);
+                        selectEl.add(option);
+                    });
+                    statusEl.textContent = '';
+                    selectEl.disabled = false;
+                } else {
+                    statusEl.textContent = 'Nem található .docx sablon a partner mappájában.';
+                }
+            } catch (err) {
+                statusEl.textContent = 'Hiba a sablonok betöltésekor.';
+            }
+        }, 100);
+    }
+
+    function handleSearchDeviceBySerial() {
+        const serialNumber = document.getElementById('serialNumberInput').value.trim();
+        const resultDiv = document.getElementById('deviceSearchResult');
+
+        if (!serialNumber) {
+            resultDiv.innerHTML = `<p class="text-yellow-400">Kérlek, add meg a keresendő gyári számot!</p>`;
+            return;
+        }
+
+        const device = partnerDatabase.find(d => findValue(d, 'Gyári szám').toLowerCase() === serialNumber.toLowerCase());
+
+        if (device) {
+            let detailsHtml = '<h3 class="text-xl font-bold mb-4 text-green-300">Megtalált eszköz adatai</h3>';
+            detailsHtml += '<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-left">';
+            
+            Object.entries(device).forEach(([key, value]) => {
+                // A Cégnév és Cím adatokat nem jelenítjük meg, mert azok a partnerhez tartoznak, nem az eszközhöz.
+                if (key.toLowerCase() !== 'cégnév' && key.toLowerCase() !== 'cím') {
+                    detailsHtml += `
+                        <div class="border-b border-blue-800 py-1">
+                            <span class="text-blue-300 text-sm">${key}:</span>
+                            <p class="font-semibold text-white break-words">${value || '-'}</p>
+                        </div>
+                    `;
+                }
+            });
+            detailsHtml += '</div>' + getNewInspectionDataFormHtml(); // Hozzáadjuk az új adatbeviteli űrlapot
+            resultDiv.innerHTML = detailsHtml;
+        } else {
+            resultDiv.innerHTML = `
+                <p class="text-red-400 font-bold mb-4">Nem található eszköz ezzel a gyári számmal: "${serialNumber}"</p>
+                <p class="mb-4">Szeretnéd új eszközként rögzíteni?</p>
+                <button id="registerNewDeviceFromSearchBtn" data-serial-number="${serialNumber}" class="btn btn-success">Új eszköz rögzítése</button>
+            `;
+        }
+    }
     
+    function resetNewInspectionScreen() {
+        const resultDiv = document.getElementById('deviceSearchResult');
+        const serialInput = document.getElementById('serialNumberInput');
+
+        resultDiv.innerHTML = '<p class="text-gray-400">A keresés eredménye itt fog megjelenni.</p>';
+        if(serialInput) {
+            serialInput.value = '';
+            serialInput.focus();
+        }
+    }
+
+    function getNewInspectionDataFormHtml() {
+        const today = new Date().toISOString().slice(0, 10);
+        return `
+            <div id="newInspectionDataEntry" class="mt-6 pt-6 border-t border-blue-700">
+                <h3 class="text-xl font-bold mb-4 text-teal-300">Új vizsgálati adatok rögzítése</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-left">
+                    <div class="md:col-span-2">
+                        <label class="block text-sm mb-1">Vizsgálat jellege</label>
+                        <select name="vizsgalat_jellege_new" class="input-field"><option>Időszakos vizsgálat</option><option>Szerkezeti vizsgálat</option><option>Fővizsgálat</option></select>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm mb-1">Következő időszakos vizsgálat</label>
+                        <input name="kov_idoszakos_vizsgalat_new" type="date" class="input-field" value="${today}">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm mb-1">Következő Terhelési próba</label>
+                        <input name="kov_terhelesi_proba_new" type="date" class="input-field">
+                    </div>
+                    <div class="md:col-span-2"><label class="block text-sm mb-1">Vizsgálat eredménye (Megállapítások)</label><textarea name="megallapitasok_new" rows="3" class="input-field"></textarea></div>
+                    <div class="md:col-span-2"><label class="block text-sm mb-1">Feltárt hiba</label><textarea name="hiba_new" rows="3" class="input-field"></textarea></div>
+                    <div class="md:col-span-2"><label class="block text-sm mb-1">Felhasznált anyagok, intézkedés</label><textarea name="intezkedes_new" rows="3" class="input-field"></textarea></div>
+                </div>
+                <button id="finishNewInspectionBtn" class="btn btn-success mt-6 w-full">Kész, következő eszköz</button>
+            </div>`;
+    }
+
     function handleAddAnotherDeviceEjk() {
         const form = document.getElementById('dataEntryFormEjk');
         const formData = new FormData(form);
@@ -549,20 +681,12 @@
             'Cím': findValue(companyData, 'Cím') || '',
             'Megnevezés': currentData.eszkoz_megnevezes,
             'Üzemeltetői azonosító': currentData.eszkoz_uzemeltetoi_azonosito,
-            'Típus': currentData.eszkoz_tipus,
+            'Típus': currentData.eszkoz_tipus,            
+            'Hasznos hossz': currentData.eszkoz_hossz,
+            'Teherbírás (WLL)': currentData.eszkoz_teherbiras,
             'Gyártó': currentData.eszkoz_gyarto,
             'Gyári szám': currentData.eszkoz_gyariszam,
             'Gyártás éve': currentData.gyartas_eve,
-            'Teherbírás (WLL)': currentData.eszkoz_teherbiras,
-            'Hasznos hossz': currentData.eszkoz_hossz,
-            'Vizsgálat helye': currentData.vizsgalat_helye,
-            'Vizsgálat időpontja': currentData.vizsgalat_idopontja,
-            'Vizsgálat jellege': currentData.vizsgalat_jellege,
-            'Következő időszakos vizsgálat': currentData.kovetkezo_idoszakos_vizsgalat,
-            'Következő terhelési próba': currentData.kovetkezo_terhelesi_proba,
-            'Megállapítások': currentData.megallapitasok,
-            'Feltárt hiba': currentData.hiba,
-            'Felhasznált anyagok': currentData.intezkedes,
         };
         newDeviceData.push(newRecord);
         
@@ -589,20 +713,12 @@
                 'Cím': findValue(companyData, 'Cím') || '',
                 'Megnevezés': currentData.eszkoz_megnevezes,
                 'Üzemeltetői azonosító': currentData.eszkoz_uzemeltetoi_azonosito,
-                'Típus': currentData.eszkoz_tipus,
+                'Típus': currentData.eszkoz_tipus,                
+                'Hasznos hossz': currentData.eszkoz_hossz,
+                'Teherbírás (WLL)': currentData.eszkoz_teherbiras,
                 'Gyártó': currentData.eszkoz_gyarto,
                 'Gyári szám': currentData.eszkoz_gyariszam,
                 'Gyártás éve': currentData.gyartas_eve,
-                'Teherbírás (WLL)': currentData.eszkoz_teherbiras,
-                'Hasznos hossz': currentData.eszkoz_hossz,
-                'Vizsgálat helye': currentData.vizsgalat_helye,
-                'Vizsgálat időpontja': currentData.vizsgalat_idopontja,
-                'Vizsgálat jellege': currentData.vizsgalat_jellege,
-                'Következő időszakos vizsgálat': currentData.kovetkezo_idoszakos_vizsgalat,
-                'Következő terhelési próba': currentData.kovetkezo_terhelesi_proba,
-                'Megállapítások': currentData.megallapitasok,
-                'Feltárt hiba': currentData.hiba,
-                'Felhasznált anyagok': currentData.intezkedes,
             };
              newDeviceData.push(newRecord);
              form.reset();
@@ -1101,38 +1217,25 @@
     }
 
     // --- HTML GENERÁLÓ FÜGGVÉNYEK ---
-    function getEjkDataEntryHtml() {
+    function getEjkDataEntryHtml(prefillData = {}) {
         return `
             <header class="bg-blue-950/70 p-4 rounded-t-xl mb-1 shadow-lg border-b border-blue-800">
                 <h2 class="text-xl font-bold text-center">Adatbevitel - ${currentPartner.name}</h2>
             </header>
             <div class="card rounded-t-none">
-                 <form id="dataEntryFormEjk" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="space-y-4 p-4 bg-blue-900/50 rounded-lg">
-                        <h3 class="text-lg font-semibold border-b border-blue-700 pb-2 mb-4">A vizsgált eszköz adatai</h3>
-                        <div><label class="block text-sm">Megnevezés:</label><input name="eszkoz_megnevezes" class="input-field" required></div>
-                        <div><label class="block text-sm">Üzemeltetői azonosító:</label><input name="eszkoz_uzemeltetoi_azonosito" class="input-field"></div>
-                        <div><label class="block text-sm">Típus:</label><input name="eszkoz_tipus" class="input-field"></div>
-                        <div><label class="block text-sm">Hasznos hossz:</label><input name="eszkoz_hossz" class="input-field"></div>
-                        <div><label class="block text-sm">Teherbírás (WLL):</label><input name="eszkoz_teherbiras" class="input-field"></div>
-                        <div><label class="block text-sm">Gyártó:</label><input name="eszkoz_gyarto" class="input-field"></div>
-                        <div><label class="block text-sm">Gyári szám:</label><input name="eszkoz_gyariszam" class="input-field" required></div>
-                        <div><label class="block text-sm">Gyártás éve:</label><input name="gyartas_eve" class="input-field"></div>
-                    </div>
-                     <div class="space-y-4 p-4 bg-blue-900/50 rounded-lg">
-                        <h3 class="text-lg font-semibold border-b border-blue-700 pb-2 mb-4">A vizsgálat adatai</h3>
-                        <div><label class="block text-sm">Vizsgálat helye:</label><input name="vizsgalat_helye" class="input-field"></div>
-                        <div><label class="block text-sm">Vizsgálat időpontja:</label><input name="vizsgalat_idopontja" type="date" class="input-field"></div>
-                        <div><label class="block text-sm">Vizsgálat jellege:</label><input name="vizsgalat_jellege" class="input-field"></div>
-                        <div><label class="block text-sm">Következő időszakos vizsgálat:</label><input name="kovetkezo_idoszakos_vizsgalat" type="date" class="input-field"></div>
-                        <div><label class="block text-sm">Következő terhelési próba:</label><input name="kovetkezo_terhelesi_proba" type="date" class="input-field"></div>
-                    </div>
-                     <div class="space-y-4 p-4 bg-blue-900/50 rounded-lg">
-                        <h3 class="text-lg font-semibold border-b border-blue-700 pb-2 mb-4">Eredmény és minősítés</h3>
-                        <div><label class="block text-sm">Megállapítások:</label><textarea name="megallapitasok" rows="3" class="input-field"></textarea></div>
-                        <div><label class="block text-sm">Feltárt hiba:</label><textarea name="hiba" rows="3" class="input-field"></textarea></div>
-                        <div><label class="block text-sm">Felhasznált anyagok:</label><textarea name="intezkedes" rows="3" class="input-field"></textarea></div>
-                    </div>
+                <h3 class="text-xl font-semibold border-b border-blue-700 pb-2 mb-6">Új eszköz alapadatai</h3>
+                 <form id="dataEntryFormEjk" class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                    <!-- Bal oszlop -->
+                    <div><label class="block text-sm">Megnevezés</label><input name="eszkoz_megnevezes" class="input-field" required value="${prefillData.eszkoz_megnevezes || ''}"></div>
+                    <div><label class="block text-sm">Gyári szám</label><input name="eszkoz_gyariszam" class="input-field" required value="${prefillData.eszkoz_gyariszam || ''}"></div>
+                    <div><label class="block text-sm">Típus</label><input name="eszkoz_tipus" class="input-field" value="${prefillData.eszkoz_tipus || ''}"></div>
+                    <div><label class="block text-sm">Gyártó</label><input name="eszkoz_gyarto" class="input-field" value="${prefillData.eszkoz_gyarto || ''}"></div>
+                    <div><label class="block text-sm">Hasznos hossz</label><input name="eszkoz_hossz" class="input-field" value="${prefillData.eszkoz_hossz || ''}"></div>
+                    <div><label class="block text-sm">Gyártás éve</label><input name="gyartas_eve" class="input-field" value="${prefillData.gyartas_eve || ''}"></div>
+                    <div><label class="block text-sm">Teherbírás (WLL)</label><input name="eszkoz_teherbiras" class="input-field" value="${prefillData.eszkoz_teherbiras || ''}"></div>
+                    <div><label class="block text-sm">Üzemeltetői azonosító</label><input name="eszkoz_uzemeltetoi_azonosito" class="input-field" value="${prefillData.eszkoz_uzemeltetoi_azonosito || ''}"></div>
+                    
+                    <!-- Jobb oszlop -->
                 </form>
                 <div id="notificationEjk" class="text-center my-4 text-green-400 font-semibold h-6"></div>
                 <div class="flex flex-col sm:flex-row gap-4 justify-between mt-6">
@@ -1253,6 +1356,53 @@
                 <p class="mb-2 text-blue-300">Bejelentkezve: ${userProfile.name} (${userProfile.email})</p>
                 <div id="enyStatus" class="mt-4 text-center"></div>
                 <div id="enyDeviceTable" class="mt-4"></div>
+            </div>
+        `;
+    }
+
+    function getNewInspectionScreenHtml() {
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD formátum
+        return `
+            <div class="card max-w-3xl mx-auto">
+                <h2 class="text-2xl font-bold text-center mb-8">Új vizsgálat rögzítése</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 border-b border-blue-800 pb-8">
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">1. Sablon kiválasztása</h3>
+                        <select id="templateSelectNewInspection" class="input-field" disabled><option>Sablonok betöltése...</option></select>
+                        <p id="templateStatusNewInspection" class="text-sm text-yellow-400 mt-2 h-4"></p>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">2. Szakértő</h3>
+                        <select id="expertSelectNewInspection" class="input-field" required>
+                            <option value="" disabled selected>Válassz egy szakértőt...</option>
+                            <option value="Nagy Imre">Nagy Imre</option>
+                            <option value="Gerőly Iván">Gerőly Iván</option>
+                            <option value="Szadlon Norbert">Szadlon Norbert</option>
+                            <option value="Bagyinszki Lóránt">Bagyinszki Lóránt</option>
+                        </select>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">3. Vizsgálat helye</h3>
+                        <input type="text" id="inspectionLocationInput" placeholder="Pl. a partner telephelye" class="input-field">
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">4. Vizsgálat időpontja</h3>
+                        <input type="date" id="inspectionDateInput" class="input-field" value="${today}">
+                    </div>
+                </div>
+
+                <h3 class="text-lg font-semibold mb-3">5. Eszköz keresése</h3>
+                <p class="mb-4 text-blue-300">Add meg a vizsgálandó eszköz gyári számát a meglévő adatok betöltéséhez.</p>
+                <form id="searchDeviceForm" class="flex flex-col sm:flex-row items-center gap-4 mb-6">
+                    <input type="text" id="serialNumberInput" placeholder="Gyári szám..." class="input-field flex-grow" required>
+                    <button id="searchDeviceBySerialBtn" class="btn btn-primary w-full sm:w-auto">Eszköz keresése</button>
+                </form>
+                <div id="deviceSearchResult" class="bg-blue-900/50 p-6 rounded-lg min-h-[8rem]">
+                    <p class="text-gray-400">A keresés eredménye itt fog megjelenni.</p>
+                </div>
+
+                <div class="mt-8 text-left"><button id="backToEjkMainBtn" class="btn btn-secondary">Vissza a főmenübe</button></div>
             </div>
         `;
     }
