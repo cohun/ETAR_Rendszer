@@ -6,6 +6,7 @@
     "build": "node ./create-env.js"
   },
   "devDependencies": {
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "fs-extra": "^11.2.0"
   }
 }
