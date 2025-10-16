@@ -16,6 +16,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- JSZip -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Environment Variables -->
+    <script src="env.js"></script>
     
     <style>
         body { font-family: 'Inter', sans-serif; }
@@ -134,10 +136,10 @@
     // ===================================================================================
     // FONTOS BEÁLLÍTÁSOK
     // ===================================================================================
-    const API_KEY = 'AIzaSyBfcVv4o1nhi26mncDin_P1dSucArZt1MY'; // Ezt később obfuszkáljuk
-    const CLIENT_ID = '275625800423-lm3nn50kiq6ld3n56vtfocb627fvbek9.apps.googleusercontent.com'; // Ezt később obfuszkáljuk
-    const ROUTING_TABLE_FOLDER_ID = '1pzigXXQ7-Ed-PGlhFeDm7fzG6W3Lzptp'; // Az 'Utvonal' mappa ID-ja
-    const MAIN_ROOT_FOLDER_ID = '1spypeyZmJ19qTHgVuFkaucu7zvI9qmuv'; // A központi EJK mappa ID-ja
+    const API_KEY = window.ETAR_CONFIG.API_KEY;
+    const CLIENT_ID = window.ETAR_CONFIG.CLIENT_ID;
+    const ROUTING_TABLE_FOLDER_ID = window.ETAR_CONFIG.ROUTING_TABLE_FOLDER_ID;
+    const MAIN_ROOT_FOLDER_ID = window.ETAR_CONFIG.MAIN_ROOT_FOLDER_ID;
     // ===================================================================================
 
     const SCOPES = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
