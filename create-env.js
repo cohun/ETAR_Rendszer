@@ -29,7 +29,7 @@ console.log('env.js file generated successfully.');
 console.log(`Copying static assets to ${outputDir}...`);
 
 const assetsToCopy = [
-    'etar_rendszer.html',
+    'index.html',
     'ETAR_H-IITB_512.png',
     'ETAR_H.png',
     'logo.jpg'
