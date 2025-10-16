@@ -59,7 +59,7 @@
 </head>
 <body class="bg-blue-900 text-gray-200 min-h-screen flex items-center justify-center p-4">
     
-    <img src="ETAR_H.png" alt="ETAR-H Logó" class="fixed top-4 left-4 w-24 h-24 rounded-full border-2 border-blue-400 shadow-xl z-50 transition-transform hover:scale-110">
+    <img src="ETAR_H.png" alt="ETAR-H Logó" class="hidden md:block fixed top-4 left-4 w-24 h-24 rounded-full border-2 border-blue-400 shadow-xl z-50 transition-transform hover:scale-110">
 
     <div class="container mx-auto max-w-5xl">
 
@@ -87,7 +87,6 @@
                 <div id="currentPartnerInfo" class="mb-4"></div>
                 <p id="ejkUserInfo" class="mb-6 text-blue-300"></p>
                 <div id="partnerList" class="space-y-2"></div>
-                <div id="ejkStatus" class="mt-6 text-center"></div>
             </div>
         </div>
         <div id="ejkMainScreen" class="screen text-center">
@@ -97,11 +96,14 @@
                     <h2 id="ejkSelectedPartner" class="text-xl font-bold"></h2>
                     <div class="w-32"></div> <!-- Placeholder for spacing -->
                 </div>
-                <h1 class="text-3xl sm:text-4xl font-bold mb-8">ETAR Jegyzőkönyv Készítő (EJK)</h1>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 justify-center">
+                <h1 class="text-3xl sm:text-4xl font-bold mb-6">ETAR Jegyzőkönyv Készítő (EJK)</h1>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 justify-center mb-8">
                     <button id="ejkNewDeviceBtn" class="btn btn-primary text-lg">1. Új eszköz feltöltés</button>
                     <button id="ejkNewInspectionBtn" class="btn btn-info text-lg">2. Új vizsgálat</button>
                     <button id="ejkGenerateProtocolsBtn" class="btn btn-success text-lg">3. Jegyzőkönyv generálás</button>
+                </div>
+                <div id="ejkStatus" class="mt-4 text-center"></div>
+                <div id="ejkDeviceTable" class="mt-4">
                 </div>
             </div>
         </div>
@@ -248,17 +250,21 @@
                 if (buttonTarget.id === 'signInButton') handleSignIn();
                 if (buttonTarget.id === 'signOutButtonEjk' || buttonTarget.id === 'signOutButtonEny') handleSignOut();
                 if (buttonTarget.id === 'backToPartnerSelectBtn') showScreen('ejkSelect');
-                if (buttonTarget.id === 'backToEjkMainBtn') showScreen('ejkMain');
-                if (buttonTarget.id === 'ejkNewDeviceBtn') showEjkDataEntry();
+                if (buttonTarget.id === 'backToEjkMainBtn') showScreen('ejkMain'); // EJK: Vissza a főmenübe
+                if (buttonTarget.id === 'backToEnyMainBtn') showEnyScreen({ name: currentPartner.name, id: currentPartner.folderId }); // ENY: Vissza az adatbázishoz
+                if (buttonTarget.id === 'ejkNewDeviceBtn') showNewDeviceScreen('ejkMain');
+                if (buttonTarget.id === 'enyNewDeviceBtn') showNewDeviceScreen('enyMain');
                 if (buttonTarget.id === 'ejkNewInspectionBtn') showNewInspectionScreen();
                 if (buttonTarget.id === 'ejkGenerateProtocolsBtn') showEjkDocGeneration();
                 if (buttonTarget.id === 'addAnotherDeviceBtnEjk') handleAddAnotherDeviceEjk();
                 if (buttonTarget.id === 'saveToDriveBtnEjk') showSaveConfirmation();
                 if (buttonTarget.id === 'processFilesBtnEjk') handleProcessFilesEjk();
+                if (buttonTarget.id === 'generateProtocolsBtnEny') handleGenerateProtocolsEny();
+                if (buttonTarget.id === 'deleteSelectedBtnEny') handleDeleteSelectedEny();
                 if (buttonTarget.id === 'downloadDbBtnEny') handleDownloadDatabase();
                 if (buttonTarget.id === 'registerNewDeviceFromSearchBtn') {
-                    const serialNumber = buttonTarget.dataset.serialNumber;
-                    showEjkDataEntry({ eszkoz_gyariszam: serialNumber });
+                    const serialNumber = buttonTarget.dataset.serialNumber; // A visszatérési képernyő itt az 'ejkMain' lesz, ami helyes.
+                    showNewDeviceScreen('ejkMain', { eszkoz_gyariszam: serialNumber });
                 }
                 
                 if (buttonTarget.dataset.partnerId) {
@@ -281,6 +287,12 @@
             if (sortTarget) {
                 if (screens.ejkGenerateDocs.classList.contains('active')) {
                     handleSortDeviceList(sortTarget.dataset.sortKey);
+                } else if (screens.ejkMain.classList.contains('active')) {
+                    // A főmenü táblázatának rendezése
+                    if (sortState.key === sortTarget.dataset.sortKey) {
+                        sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+                    } else { sortState.key = sortTarget.dataset.sortKey; sortState.direction = 'asc'; }
+                    renderEjkTable();
                 } else if (screens.enyMain.classList.contains('active')) {
                     handleSortEnyTable(sortTarget.dataset.sortKey);
                 }
@@ -444,6 +456,7 @@
         const companyDataLoaded = await loadCompanyData(partner.id, 'ejkStatus');
         if (dbLoaded && companyDataLoaded) {
             setStatus('ejkStatus', `Adatok sikeresen betöltve. Adatbázis: ${partnerDatabase.length} eszköz.`, false);
+            renderEjkTable(); // Táblázat renderelése az EJK főképernyőn
         }
     }
 
@@ -554,11 +567,11 @@
     }
     
     // --- EJK FUNKCIÓK ---
-    function showEjkDataEntry(prefillData = {}) {
+    function showNewDeviceScreen(returnScreen, prefillData = {}) {
         newDeviceData = [];
         const screen = screens.dataEntry;
-        screen.innerHTML = getEjkDataEntryHtml(prefillData);
-        showScreen('dataEntry');
+        screen.innerHTML = getNewDeviceHtml(returnScreen, prefillData);
+        showScreen('dataEntry'); // A képernyő ID-ja 'dataEntryScreen' marad
     }
 
     function showEjkDocGeneration() {
@@ -700,6 +713,7 @@
 
             // 4. Sikeres mentés után a felület visszaállítása
             alert('Vizsgálati adatok sikeresen mentve!');
+            renderEjkTable(); // A főmenü táblázatának frissítése a háttérben
             resetNewInspectionScreen();
 
         } catch (err) {
@@ -775,6 +789,15 @@
              return;
         }
 
+        // Ellenőrzés, hogy a gyári szám létezik-e már
+        const serialNumber = currentData.eszkoz_gyariszam;
+        const isDuplicate = partnerDatabase.some(device => findValue(device, 'Gyári szám').toLowerCase() === serialNumber.toLowerCase()) ||
+                            newDeviceData.some(device => findValue(device, 'Gyári szám').toLowerCase() === serialNumber.toLowerCase());
+        if (isDuplicate) {
+            alert(`A(z) "${serialNumber}" gyári szám már szerepel az adatbázisban vagy a most hozzáadott tételek között. Kérjük, adjon meg egy másikat!`);
+            return;
+        }
+
         lastDeviceData = { ...currentData };
         
         const newRecord = {
@@ -809,6 +832,15 @@
         formData.forEach((value, key) => currentData[key] = value.trim());
         
         if (currentData.eszkoz_megnevezes && currentData.eszkoz_gyariszam) {
+            // Ellenőrzés, hogy a gyári szám létezik-e már
+            const serialNumber = currentData.eszkoz_gyariszam;
+            const isDuplicate = partnerDatabase.some(device => findValue(device, 'Gyári szám').toLowerCase() === serialNumber.toLowerCase()) ||
+                                newDeviceData.some(device => findValue(device, 'Gyári szám').toLowerCase() === serialNumber.toLowerCase());
+            if (isDuplicate) {
+                alert(`A(z) "${serialNumber}" gyári szám már szerepel az adatbázisban vagy a most hozzáadott tételek között. A mentés előtt kérjük, javítsa vagy törölje az űrlap tartalmát!`);
+                // Nem adjuk hozzá a duplikált adatot, de a megerősítést megmutatjuk a korábban hozzáadottakkal.
+            } else {
+                // Csak akkor adjuk hozzá, ha nem duplikált
              const newRecord = {
                 'Cégnév': findValue(companyData, 'Cégnév') || currentPartner.name,
                 'Cím': findValue(companyData, 'Cím') || '',
@@ -823,6 +855,7 @@
             };
              newDeviceData.push(newRecord);
              form.reset();
+            }
         }
 
         if (newDeviceData.length === 0) {
@@ -833,6 +866,7 @@
         const modal = document.getElementById('confirmationModal');
         const statsDiv = document.getElementById('modalStats');
         statsDiv.innerHTML = `
+            <p>Partner: <span class="font-bold text-blue-300">${currentPartner.name}</span></p>
             <p>Eredeti sorok száma: <span class="font-bold text-blue-300">${partnerDatabase.length}</span></p>
             <p>Új sorok száma: <span class="font-bold text-yellow-300">${newDeviceData.length}</span></p>
             <hr class="my-2 border-slate-600">
@@ -841,8 +875,11 @@
         
         modal.classList.remove('hidden');
 
+        const returnScreen = document.getElementById('saveToDriveBtnEjk').dataset.returnScreen;
+
         document.getElementById('modalCancelBtn').onclick = () => modal.classList.add('hidden');
         document.getElementById('modalConfirmBtn').onclick = () => {
+            document.getElementById('modalConfirmBtn').dataset.returnScreen = returnScreen;
             modal.classList.add('hidden');
             executeUpdateOnDrive();
         };
@@ -876,7 +913,13 @@
             notificationEl.textContent = `Az 'adatbazis.xlsx' sikeresen frissítve a Drive-on!`;
             setTimeout(() => {
                 newDeviceData = []; lastDeviceData = {};
-                showScreen('ejkMain');
+                const returnScreen = document.getElementById('modalConfirmBtn').dataset.returnScreen;
+                if (returnScreen === 'enyMain') {
+                    showEnyScreen({ name: currentPartner.name, id: currentPartner.folderId });
+                } else { // ejkMain
+                    showScreen('ejkMain');
+                    renderEjkTable(); // Táblázat frissítése az új adatokkal
+                }
             }, 4000);
         } catch (err) {
             const errorDetails = err.message || err.toString();
@@ -1099,6 +1142,246 @@
         }
     }
 
+    function renderEjkTable() {
+        const tableContainer = document.getElementById('ejkDeviceTable');
+        if (!tableContainer) return;
+
+        if (!partnerDatabase || partnerDatabase.length === 0) {
+            tableContainer.innerHTML = '<p class="text-center text-gray-400 p-4">Nincs megjeleníthető eszköz az adatbázisban.</p>';
+            return;
+        }
+
+        const sortedDatabase = [...partnerDatabase].sort((a, b) => {
+            const valA = findValue(a, sortState.key);
+            const valB = findValue(b, sortState.key);
+            const direction = sortState.direction === 'asc' ? 1 : -1;
+            return valA.localeCompare(valB, 'hu', { numeric: true }) * direction;
+        });
+
+        const tableHeader = `
+            <thead>
+                <tr class="bg-blue-950/70 sticky top-0">
+                    <th data-sort-key="Vizsgálat időpontja" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Vizsg. Időp.</th>
+                    <th data-sort-key="Megnevezés" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Megnevezés</th>
+                    <th data-sort-key="Típus" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Típus</th>
+                    <th data-sort-key="Hasznos hossz" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Hossz</th>
+                    <th data-sort-key="Gyári szám" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Gyári szám</th>
+                    <th data-sort-key="Megállapítások" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Megállapítások</th>
+                    <th data-sort-key="Következő időszakos vizsgálat" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Köv. Vizsg.</th>
+                </tr>
+            </thead>
+        `;
+
+        const tableBody = sortedDatabase.map(device => {
+            const inspectionDate = findValue(device, 'Vizsgálat időpontja');
+            const deviceName = findValue(device, 'Megnevezés');
+            const deviceType = findValue(device, 'Típus');
+            const deviceLength = findValue(device, 'Hasznos hossz');
+            const deviceSerial = findValue(device, 'Gyári szám');
+            const deviceFindings = findValue(device, 'Megállapítások');
+            const nextInspection = findValue(device, 'Következő időszakos vizsgálat');
+            const dateClass = getInspectionDateClass(nextInspection);
+
+            return `
+                <tr class="border-b border-blue-900 hover:bg-blue-800/50">
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${inspectionDate}">${inspectionDate || 'N/A'}</td>
+                    <td class="p-3 whitespace-nowrap" title="${deviceName}">${deviceName}</td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceType}">${deviceType || 'N/A'}</td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceLength}">${deviceLength || 'N/A'}</td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceSerial}">${deviceSerial}</td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceFindings}">${deviceFindings || 'N/A'}</td>
+                    <td class="p-3 whitespace-nowrap ${dateClass}" title="${nextInspection}">${nextInspection || 'N/A'}</td>
+                </tr>
+            `;
+        }).join('');
+
+        tableContainer.innerHTML = `
+            <div class="max-h-[50vh] overflow-y-auto border border-blue-800 rounded-lg text-left">
+                <table class="min-w-full divide-y divide-blue-800">
+                    ${tableHeader}
+                    <tbody class="bg-blue-900/30 divide-y divide-blue-900">${tableBody}</tbody>
+                </table>
+            </div>
+        `;
+        updateSortIndicators();
+    }
+
+    async function handleGenerateProtocolsEny() {
+        const statusEl = document.getElementById('enyStatus');
+        const selectedCheckboxes = document.querySelectorAll('#enyDeviceTable input[type="checkbox"]:checked');
+
+        if (selectedCheckboxes.length === 0) {
+            alert('Kérlek, válassz ki legalább egy eszközt a listából a jegyzőkönyv generálásához!');
+            return;
+        }
+
+        // Ellenőrzés: A kiválasztott eszközök mindegyikének van-e érvényes vizsgálati dátuma?
+        for (const checkbox of selectedCheckboxes) {
+            const deviceIndex = parseInt(checkbox.dataset.deviceIndex, 10);
+            const device = partnerDatabase[deviceIndex];
+            const nextInspection = findValue(device, 'Következő időszakos vizsgálat');
+            if (!nextInspection || isNaN(new Date(nextInspection))) {
+                const deviceName = findValue(device, 'Megnevezés') || `a(z) ${findValue(device, 'Gyári szám')} gyári számú`;
+                alert(`A jegyzőkönyv generálás nem lehetséges, mert ${deviceName} eszközhöz nincs érvényes "Következő időszakos vizsgálat" dátum rögzítve.`);
+                return;
+            }
+        }
+
+        statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Folyamat előkészítése... Keresem a 'JKV_1.docx' sablont.</p>`;
+        let tempFolderId = null;
+
+        try {
+            // 1. Sablonfájl megkeresése
+            const templateResponse = await gapi.client.drive.files.list({
+                q: `'${currentPartner.folderId}' in parents and name='JKV_1.docx' and trashed=false`,
+                fields: 'files(id)'
+            });
+
+            if (!templateResponse.result.files || templateResponse.result.files.length === 0) {
+                throw new Error("A kötelező 'JKV_1.docx' sablonfájl nem található a partner mappájában.");
+            }
+            const templateFileId = templateResponse.result.files[0].id;
+
+            // 2. Ideiglenes mappa létrehozása a Drive-on
+            const now = new Date();
+            const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+            const tempFolderName = `Jegyzokonyvek_temp_${timestamp}`;
+
+            statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Ideiglenes mappa létrehozása...</p>`;
+            const folderMetadata = { name: tempFolderName, mimeType: 'application/vnd.google-apps.folder', parents: [currentPartner.folderId] };
+            const folderResponse = await gapi.client.drive.files.create({ resource: folderMetadata, fields: 'id' });
+            tempFolderId = folderResponse.result.id;
+
+            const templateFileResponse = await gapi.client.drive.files.get({ fileId: templateFileId, alt: 'media' });
+            const templateContent = templateFileResponse.body;
+
+            const generatedPdfIds = [];
+
+            // 3. Kiválasztott eszközök feldolgozása
+            for (let i = 0; i < selectedCheckboxes.length; i++) {
+                const checkbox = selectedCheckboxes[i];
+                const deviceIndex = parseInt(checkbox.dataset.deviceIndex, 10);
+                const deviceData = partnerDatabase[deviceIndex];
+                const deviceName = findValue(deviceData, 'Megnevezés');
+
+                const expertName = findValue(deviceData, 'Vizsgáló');
+                const expertId = expertIds[expertName];
+                if (!expertName || !expertId) {
+                    throw new Error(`A(z) "${deviceName}" eszközhöz nincs érvényes vizsgáló rendelve. A generálás leállt.`);
+                }
+
+                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Jegyzőkönyv generálása: ${i + 1}/${selectedCheckboxes.length} (${deviceName})</p>`;
+                const docxData = await generateDocxData(deviceData, { name: expertName, id: expertId });
+
+                // Metaadatok frissítése a memóriában lévő adatbázisban
+                partnerDatabase[deviceIndex]['Sorszám'] = docxData.sorszam;
+                partnerDatabase[deviceIndex]['Kelt'] = docxData.kelt;
+                partnerDatabase[deviceIndex]['Időbélyeg'] = docxData.idobelyeg;
+
+                const zip = new PizZip(templateContent);
+                const doc = new docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
+                doc.setData(docxData);
+                doc.render();
+                const generatedDoc = doc.getZip().generate({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+
+                const pdfBlob = await convertDocxToPdf(generatedDoc);
+                const pdfFileName = `${findValue(deviceData, 'Típus')}_${findValue(deviceData, 'Gyári szám')}_jkv.pdf`.replace(/[^a-zA-Z0-9_.-]/g, '_');
+                const pdfMetadata = { name: pdfFileName, parents: [tempFolderId] };
+                const pdfForm = new FormData();
+                pdfForm.append('metadata', new Blob([JSON.stringify(pdfMetadata)], { type: 'application/json' }));
+                pdfForm.append('file', pdfBlob);
+
+                const pdfUploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${gapi.client.getToken().access_token}` },
+                    body: pdfForm
+                });
+                const uploadedPdf = await pdfUploadRes.json();
+                if (!uploadedPdf.id) throw new Error(`PDF feltöltése sikertelen: ${pdfFileName}`);
+                generatedPdfIds.push({ id: uploadedPdf.id, name: pdfFileName });
+            }
+
+            // 4. Adatbázis frissítése a Drive-on
+            statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Adatbázis frissítése a metaadatokkal...</p>`;
+            const workbook = XLSX.utils.book_new();
+            const worksheet = XLSX.utils.json_to_sheet(partnerDatabase);
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Adatok');
+            const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            await uploadFile(currentPartner.databaseFileId, blob);
+
+            // 5. ZIP archívum készítése és letöltése
+            statusEl.innerHTML = `<div class="loader mx-auto"></div><p>ZIP archívum készítése...</p>`;
+            const zip = new JSZip();
+            for (let i = 0; i < generatedPdfIds.length; i++) {
+                const fileInfo = generatedPdfIds[i];
+                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Fájl hozzáadása a ZIP-hez: ${i + 1}/${generatedPdfIds.length}</p>`;
+                const fileResponse = await gapi.client.drive.files.get({ fileId: fileInfo.id, alt: 'media' });
+                zip.file(fileInfo.name, fileResponse.body, { binary: true });
+            }
+
+            statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Véglegesítés... A letöltés hamarosan indul.</p>`;
+            const zipBlob = await zip.generateAsync({ type: "blob" });
+            saveAs(zipBlob, `Jegyzokonyvek_${currentPartner.name}_${timestamp}.zip`);
+
+            statusEl.className = 'mt-4 text-center text-green-400 font-semibold';
+            statusEl.textContent = `Sikeres generálás! A(z) ${selectedCheckboxes.length} jegyzőkönyvet tartalmazó ZIP fájl letöltése elindult.`;
+
+        } catch (err) {
+            const errorDetails = err.result?.error?.message || err.message || err.toString();
+            statusEl.className = 'mt-4 text-center text-red-400 font-semibold';
+            statusEl.textContent = `Hiba a feldolgozás során: ${errorDetails}`;
+        } finally {
+            if (tempFolderId) {
+                await gapi.client.drive.files.delete({ fileId: tempFolderId });
+            }
+        }
+    }
+
+    async function handleDeleteSelectedEny() {
+        const statusEl = document.getElementById('enyStatus');
+        const selectedCheckboxes = document.querySelectorAll('#enyDeviceTable input[type="checkbox"]:checked:not(#selectAllCheckboxEny)');
+
+        if (selectedCheckboxes.length === 0) {
+            alert('Kérjük, válasszon ki legalább egy eszközt a törléshez!');
+            return;
+        }
+
+        // 1. Első megerősítés
+        const firstConfirm = confirm(`Biztosan törölni szeretné a kiválasztott ${selectedCheckboxes.length} eszközt az adatbázisból? Ez a művelet nem vonható vissza!`);
+        if (!firstConfirm) {
+            return;
+        }
+
+        // 2. Második, nyomatékosabb megerősítés
+        const secondConfirm = prompt(`A törlés végleges! A folytatáshoz írja be a következő szót: TÖRLÉS`);
+        if (secondConfirm !== 'TÖRLÉS') {
+            alert('A megerősítés sikertelen, a törlés megszakítva.');
+            return;
+        }
+
+        statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Kijelölt elemek törlése és az adatbázis frissítése...</p>`;
+
+        try {
+            const indicesToDelete = Array.from(selectedCheckboxes).map(cb => parseInt(cb.dataset.deviceIndex, 10));
+            // A `partnerDatabase` frissítése: csak azokat tartjuk meg, amiknek az indexe nincs a törlendők listájában.
+            partnerDatabase = partnerDatabase.filter((_, index) => !indicesToDelete.includes(index));
+
+            // Adatbázis fájl frissítése a Drive-on
+            const workbook = XLSX.utils.book_new();
+            const worksheet = XLSX.utils.json_to_sheet(partnerDatabase);
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Adatok');
+            const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            await uploadFile(currentPartner.databaseFileId, blob);
+
+            statusEl.textContent = 'A kijelölt elemek törlése sikeres volt. A táblázat frissül...';
+            renderEnyTable(); // A táblázat újrarajzolása a frissített adatokkal
+        } catch (err) {
+            statusEl.textContent = `Hiba történt a törlés során: ${err.message}`;
+        }
+    }
+
     async function generateDocxData(data, expert) {
         const keyMap = {
             'Cégnév': 'uzemelteto_cegnev',
@@ -1187,29 +1470,48 @@
             return valA.localeCompare(valB, 'hu', { numeric: true }) * direction;
         });
 
-        const deviceListHtml = sortedDatabase.map((device, index) => {
-            const originalIndex = partnerDatabase.indexOf(device); // Eredeti index a checkboxhoz
+        const tableHeader = `
+            <thead class="bg-blue-950/70 sticky top-0">
+                <tr>
+                    <th class="p-3 w-12"><input type="checkbox" id="selectAllCheckboxEjk" class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" title="Összes kijelölése/törlése"></th>
+                    <th data-sort-key="Vizsgálat időpontja" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Vizsg. Időp.</th>
+                    <th data-sort-key="Megnevezés" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Megnevezés</th>
+                    <th data-sort-key="Típus" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Típus</th>
+                    <th data-sort-key="Hasznos hossz" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Hossz</th>
+                    <th data-sort-key="Gyári szám" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Gyári szám</th>
+                    <th data-sort-key="Megállapítások" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Megállapítások</th>
+                    <th data-sort-key="Következő időszakos vizsgálat" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Köv. Vizsg.</th>
+                </tr>
+            </thead>
+        `;
+
+        const tableBody = sortedDatabase.map(device => {
+            const originalIndex = partnerDatabase.indexOf(device);
+            const inspectionDate = findValue(device, 'Vizsgálat időpontja');
             const deviceName = findValue(device, 'Megnevezés');
             const deviceType = findValue(device, 'Típus');
             const deviceLength = findValue(device, 'Hasznos hossz');
             const deviceSerial = findValue(device, 'Gyári szám');
-            const deviceId = findValue(device, 'Üzemeltetői azonosító');
+            const deviceFindings = findValue(device, 'Megállapítások');
+            const nextInspection = findValue(device, 'Következő időszakos vizsgálat');
+            const hasFindings = !!deviceFindings;
+            const dateClass = getInspectionDateClass(nextInspection);
+
             return `
-                <label for="device_${originalIndex}" class="flex items-center p-2 bg-blue-900/50 rounded-md transition-colors ${!findValue(device, 'Megállapítások') ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-800/70 cursor-pointer'}">
-                    <input type="checkbox" id="device_${originalIndex}" data-device-index="${originalIndex}" 
-                        class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" 
-                        ${!findValue(device, 'Megállapítások') ? 'disabled' : ''} 
-                        title="${!findValue(device, 'Megállapítások') ? 'Jegyzőkönyv nem generálható, mert nincs rögzítve vizsgálati megállapítás.' : 'Kiválasztás jegyzőkönyv generáláshoz'}">
-                    <span class="ml-3 text-sm font-semibold w-1/4 truncate px-2" title="${deviceName}">${deviceName}</span>
-                    <span class="text-sm text-gray-400 w-1/4 truncate px-2" title="${deviceType}">${deviceType || 'N/A'}</span>
-                    <span class="text-sm text-gray-400 w-1/6 truncate px-2" title="${deviceLength}">${deviceLength || 'N/A'}</span>
-                    <span class="text-sm text-gray-400 w-1/4 truncate px-2" title="${deviceId}">${deviceId || 'N/A'}</span>
-                    <span class="text-sm text-gray-400 w-1/4 truncate px-2" title="${deviceSerial}">${deviceSerial}</span>
-                </label>
+                <tr class="border-b border-blue-900 ${hasFindings ? 'hover:bg-blue-800/50' : 'opacity-50'}">
+                    <td class="p-3 text-center"><input type="checkbox" id="device_${originalIndex}" data-device-index="${originalIndex}" class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" ${!hasFindings ? 'disabled' : ''} title="${!hasFindings ? 'Jegyzőkönyv nem generálható, mert nincs rögzítve vizsgálati megállapítás.' : 'Kiválasztás jegyzőkönyv generáláshoz'}"></td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${inspectionDate}">${inspectionDate || 'N/A'}</td>
+                    <td class="p-3 whitespace-nowrap" title="${deviceName}">${deviceName}</td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceType}">${deviceType || 'N/A'}</td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceLength}">${deviceLength || 'N/A'}</td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceSerial}">${deviceSerial}</td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceFindings}">${deviceFindings || 'N/A'}</td>
+                    <td class="p-3 whitespace-nowrap ${dateClass}" title="${nextInspection}">${nextInspection || 'N/A'}</td>
+                </tr>
             `;
         }).join('');
 
-        document.getElementById('deviceListEjk').innerHTML = deviceListHtml || '<p class="p-4 text-center text-gray-400">Nincs eszköz az adatbázisban.</p>';
+        document.getElementById('deviceListEjk').innerHTML = `<table class="min-w-full divide-y divide-blue-800">${tableHeader}<tbody class="bg-blue-900/30 divide-y divide-blue-900">${tableBody}</tbody></table>` || '<p class="p-4 text-center text-gray-400">Nincs eszköz az adatbázisban.</p>';
         updateSortIndicators();
     }
 
@@ -1267,13 +1569,13 @@
                     <th class="p-3 w-12">
                         <input type="checkbox" id="selectAllCheckboxEny" class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" title="Összes kijelölése/törlése">
                     </th>
-                    <th data-sort-key="Megnevezés" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Megnevezés</th>
                     <th data-sort-key="Típus" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Típus</th>
                     <th data-sort-key="Hasznos hossz" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Hossz</th>
                     <th data-sort-key="Gyári szám" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Gyári szám</th>
-                    <th data-sort-key="Üzemeltetői azonosító" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Azonosító</th>
-                    <th data-sort-key="Megállapítások" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Megállapítások</th>
                     <th data-sort-key="Következő időszakos vizsgálat" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Köv. Vizsg.</th>
+                    <th data-sort-key="Üzemeltetői azonosító" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Azonosító</th>
+                    <th data-sort-key="Megnevezés" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Megnevezés</th>
+                    <th data-sort-key="Megállapítások" class="p-3 text-left text-xs font-medium text-blue-300 uppercase tracking-wider cursor-pointer hover:text-white">Megállapítások</th>
                 </tr>
             </thead>
         `;
@@ -1286,8 +1588,6 @@
             const deviceId = findValue(device, 'Üzemeltetői azonosító');
             const deviceFindings = findValue(device, 'Megállapítások');
             const nextInspection = findValue(device, 'Következő időszakos vizsgálat');
-            
-            const hasInspectionDate = !!nextInspection && !isNaN(new Date(nextInspection));
             const dateClass = getInspectionDateClass(nextInspection);
 
             const originalIndex = partnerDatabase.indexOf(device);
@@ -1295,15 +1595,15 @@
             return `
                 <tr class="border-b border-blue-900 hover:bg-blue-800/50">
                     <td class="p-3 w-12 text-center">
-                        <input type="checkbox" id="eny_device_${originalIndex}" data-device-index="${originalIndex}" class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" ${hasInspectionDate ? '' : 'disabled'} title="${hasInspectionDate ? 'Kijelölés jegyzőkönyv generáláshoz' : 'Nincs érvényes következő vizsgálati dátum'}">
+                        <input type="checkbox" id="eny_device_${originalIndex}" data-device-index="${originalIndex}" class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" title="Kijelölés művelethez">
                     </td>
-                    <td class="p-3 whitespace-nowrap" title="${deviceName}">${deviceName}</td>
                     <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceType}">${deviceType}</td>
                     <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceLength}">${deviceLength}</td>
                     <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceSerial}">${deviceSerial}</td>
-                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceId}">${deviceId}</td>
-                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceFindings}">${deviceFindings}</td>
                     <td class="p-3 whitespace-nowrap ${dateClass}" title="${nextInspection}">${nextInspection || 'N/A'}</td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceId}">${deviceId}</td>
+                    <td class="p-3 whitespace-nowrap" title="${deviceName}">${deviceName}</td>
+                    <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceFindings}">${deviceFindings}</td>
                 </tr>
             `;
         }).join('');
@@ -1322,7 +1622,10 @@
     }
 
     // --- HTML GENERÁLÓ FÜGGVÉNYEK ---
-    function getEjkDataEntryHtml(prefillData = {}) {
+    function getNewDeviceHtml(returnScreen, prefillData = {}) {
+        const backButtonId = returnScreen === 'enyMain' ? 'backToEnyMainBtn' : 'backToEjkMainBtn';
+        const backButtonText = returnScreen === 'enyMain' ? 'Vissza az adatbázishoz' : 'Vissza a főmenübe';
+
         return `
             <header class="bg-blue-950/70 p-4 rounded-t-xl mb-1 shadow-lg border-b border-blue-800">
                 <h2 class="text-xl font-bold text-center">Adatbevitel - ${currentPartner.name}</h2>
@@ -1344,10 +1647,10 @@
                 </form>
                 <div id="notificationEjk" class="text-center my-4 text-green-400 font-semibold h-6"></div>
                 <div class="flex flex-col sm:flex-row gap-4 justify-between mt-6">
-                    <button id="backToEjkMainBtn" class="btn btn-secondary">Vissza a főmenübe</button>
+                    <button id="${backButtonId}" class="btn btn-secondary">${backButtonText}</button>
                     <div class="flex flex-col sm:flex-row gap-4">
                         <button id="addAnotherDeviceBtnEjk" class="btn btn-primary">Adatok hozzáadása és új eszköz</button>
-                        <button id="saveToDriveBtnEjk" class="btn btn-success">Változtatások mentése a Drive-ra</button>
+                        <button id="saveToDriveBtnEjk" data-return-screen="${returnScreen}" class="btn btn-success">Változtatások mentése a Drive-ra</button>
                     </div>
                 </div>
             </div>`;
@@ -1385,23 +1688,15 @@
 
         return `
             <div class="card max-w-4xl mx-auto">
-                <h2 class="text-2xl font-bold text-center mb-6">Jegyzőkönyv Készítés - ${currentPartner.name}</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div>
+                <h2 class="text-2xl font-bold text-center mb-6">Jegyzőkönyv Készítés - ${currentPartner.name}</h2>                
+                <div class="flex flex-col md:flex-row gap-8">
+                    <div class="flex-grow">
                         <h3 class="text-lg font-semibold mb-3">1. Eszközök kiválasztása</h3>
-                        <div class="bg-black/20 rounded p-2">
-                            <div class="flex items-center p-2 border-b border-blue-700 mb-2">
-                                <input type="checkbox" id="selectAllCheckboxEjk" class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 ml-3" title="Összes kijelölése/törlése">
-                                <button data-sort-key="Megnevezés" class="text-xs font-bold uppercase text-blue-300 w-1/4 text-left px-2 cursor-pointer hover:text-white">Megnevezés</button>
-                                <button data-sort-key="Típus" class="text-xs font-bold uppercase text-blue-300 w-1/4 text-left px-2 cursor-pointer hover:text-white">Típus</button>
-                                <button data-sort-key="Hasznos hossz" class="text-xs font-bold uppercase text-blue-300 w-1/6 text-left px-2 cursor-pointer hover:text-white">Hossz</button>
-                                <button data-sort-key="Üzemeltetői azonosító" class="text-xs font-bold uppercase text-blue-300 w-1/4 text-left px-2 cursor-pointer hover:text-white">Azonosító</button>
-                                <button data-sort-key="Gyári szám" class="text-xs font-bold uppercase text-blue-300 w-1/4 text-left px-2 cursor-pointer hover:text-white">Gyári szám</button>
-                            </div>
-                            <div id="deviceListEjk" class="space-y-2 max-h-80 overflow-y-auto"><div class="loader mx-auto"></div></div>
+                        <div class="max-h-[60vh] overflow-y-auto border border-blue-800 rounded-lg text-left">
+                            <div id="deviceListEjk"><div class="loader mx-auto p-8"></div></div>
                         </div>
                     </div>
-                    <div class="space-y-6">
+                    <div class="space-y-6 md:w-1/3 flex-shrink-0">
                         <div>
                             <h3 class="text-lg font-semibold mb-3">2. Sablon kiválasztása</h3>
                             <select id="templateSelectEjk" class="input-field" disabled><option>Sablonok betöltése...</option></select>
@@ -1428,14 +1723,26 @@
             <div class="card max-w-4xl mx-auto">
                 <div class="flex justify-between items-center mb-6">
                     <h1 class="text-2xl font-bold truncate pr-4" title="${partnerDisplayName}">Adatbázis - ${partnerDisplayName}</h1>
-                    <div class="flex gap-2 flex-shrink-0">
-                        <button id="generateProtocolsBtnEny" class="btn btn-success text-sm flex items-center gap-2" disabled title="Fejlesztés alatt">
+                    <div class="flex gap-2 flex-wrap justify-end flex-shrink-0">
+                        <button id="enyNewDeviceBtn" class="btn btn-primary text-sm flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>Új eszköz</span>
+                        </button>
+                        <button id="generateProtocolsBtnEny" class="btn btn-success text-sm flex items-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                             </svg>
-                            <span>Jegyzőkönyvek (Hamarosan)</span>
+                            <span>Jegyzőkönyvek</span>
                         </button>
-                        <button id="downloadDbBtnEny" class="btn btn-primary text-sm flex items-center gap-2 ml-2">
+                        <button id="deleteSelectedBtnEny" class="btn btn-danger text-sm flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                            <span>Törlés</span>
+                        </button>
+                        <button id="downloadDbBtnEny" class="btn btn-info text-sm flex items-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                             </svg>
