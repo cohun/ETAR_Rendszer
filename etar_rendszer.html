@@ -99,10 +99,11 @@
                     <div class="w-32"></div> <!-- Placeholder for spacing -->
                 </div>
                 <h1 class="text-3xl sm:text-4xl font-bold mb-6">ETAR Jegyzőkönyv Készítő (EJK)</h1>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 justify-center mb-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 justify-center mb-8">
                     <button id="ejkNewDeviceBtn" class="btn btn-primary text-lg">1. Új eszköz feltöltés</button>
-                    <button id="ejkNewInspectionBtn" class="btn btn-info text-lg">2. Új vizsgálat</button>
+                    <button id="ejkNewInspectionBtn" class="btn btn-primary text-lg">2. Új vizsgálat</button>
                     <button id="ejkGenerateProtocolsBtn" class="btn btn-success text-lg">3. Jegyzőkönyv generálás</button>
+                    <button id="ejkDownloadDbBtn" class="btn btn-info text-lg">4. Adatbázis letöltés</button>
                 </div>
                 <div id="ejkStatus" class="mt-4 text-center"></div>
                 <div id="ejkDeviceTable" class="mt-4">
@@ -254,6 +255,7 @@
                 if (buttonTarget.id === 'ejkNewDeviceBtn') showNewDeviceScreen('ejkMain');
                 if (buttonTarget.id === 'enyNewDeviceBtn') showNewDeviceScreen('enyMain');
                 if (buttonTarget.id === 'ejkNewInspectionBtn') showNewInspectionScreen();
+                if (buttonTarget.id === 'ejkDownloadDbBtn') handleDownloadDatabase();
                 if (buttonTarget.id === 'ejkGenerateProtocolsBtn') showEjkDocGeneration();
                 if (buttonTarget.id === 'addAnotherDeviceBtnEjk') handleAddAnotherDeviceEjk();
                 if (buttonTarget.id === 'saveToDriveBtnEjk') showSaveConfirmation();
