@@ -1002,12 +1002,20 @@
             const templateContent = templateResponse.body;
     
             const generatedPdfIds = [];
+            const skippedItems = [];
     
             for (let i = 0; i < selectedCheckboxes.length; i++) {
                 const checkbox = selectedCheckboxes[i];
                 const deviceIndex = parseInt(checkbox.dataset.deviceIndex, 10);
                 const deviceData = partnerDatabase[deviceIndex];
                 const deviceName = findValue(deviceData, 'Megnevezés');
+
+                // ELLENŐRZÉS: Van-e megállapítás? Ha nincs, kihagyjuk.
+                if (!findValue(deviceData, 'Megállapítások')) {
+                    const serial = findValue(deviceData, 'Gyári szám');
+                    skippedItems.push(deviceName || serial);
+                    continue; // Ugrás a következő elemre
+                }
 
                 // Szakértő adatainak kinyerése közvetlenül az eszköz adataiból
                 const expertName = findValue(deviceData, 'Vizsgáló');
@@ -1017,7 +1025,7 @@
                     throw new Error(`A(z) "${deviceName}" eszközhöz nincs érvényes vizsgáló rendelve. A generálás leállt.`);
                 }
     
-                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>DOCX generálása: ${i + 1}/${selectedCheckboxes.length} (${deviceName})</p>`;
+                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Feldolgozás: ${i + 1}/${selectedCheckboxes.length} (${deviceName})</p>`;
                 const docxData = await generateDocxData(deviceData, { name: expertName, id: expertId });
                 
                 // Új adatok hozzáadása a `partnerDatabase` megfelelő sorához
@@ -1041,7 +1049,7 @@
                     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 });
     
-                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>PDF konvertálása és mentése: ${i + 1}/${selectedCheckboxes.length}</p>`;
+                statusEl.innerHTML = `<div class="loader mx-auto"></div><p>PDF konvertálás: ${i + 1}/${selectedCheckboxes.length}</p>`;
                 const pdfBlob = await convertDocxToPdf(generatedDoc);
     
                 const pdfFileName = `${findValue(deviceData, 'Típus')}_${findValue(deviceData, 'Gyári szám')}_jkv.pdf`.replace(/[^a-zA-Z0-9_.-]/g, '_');
@@ -1060,6 +1068,12 @@
                 generatedPdfIds.push({ id: uploadedPdf.id, name: pdfFileName });
             }
     
+            if (generatedPdfIds.length === 0) {
+                statusEl.className = 'text-center my-4 text-yellow-400 font-semibold h-auto';
+                statusEl.textContent = `Nem készült egyetlen jegyzőkönyv sem. A kiválasztott ${skippedItems.length} tétel mindegyikéből hiányzott a "Megállapítások" mező.`;
+                return; // A finally blokk lefut, de a többi lépést kihagyjuk.
+            }
+
             // === 2. FÁZIS: PDF-ek letöltése a böngészőbe és ZIP készítése ===
             statusEl.innerHTML = `<div class="loader mx-auto"></div><p>ZIP archívum készítése...</p>`;
             const zip = new JSZip();
@@ -1076,7 +1090,11 @@
             saveAs(zipBlob, `Jegyzokonyvek_${currentPartner.name}_${timestamp}.zip`);
     
             statusEl.className = 'text-center my-4 text-green-400 font-semibold h-auto';
-            statusEl.textContent = `Sikeres generálás! A(z) ${selectedCheckboxes.length} jegyzőkönyvet tartalmazó ZIP fájl letöltése elindult.`;
+            let successMessage = `Sikeres generálás! A(z) ${generatedPdfIds.length} jegyzőkönyvet tartalmazó ZIP fájl letöltése elindult.`;
+            if (skippedItems.length > 0) {
+                successMessage += ` (${skippedItems.length} tétel kihagyva hiányzó megállapítások miatt.)`;
+            }
+            statusEl.textContent = successMessage;
 
             // Az adatbázis frissítése a Drive-on az új metaadatokkal
             statusEl.innerHTML += '<p class="text-sm text-slate-400 mt-2">Adatbázis frissítése a metaadatokkal...</p>';
@@ -1543,7 +1561,7 @@
 
             return `
                 <tr class="border-b border-blue-900 ${hasFindings ? 'hover:bg-blue-800/50' : 'opacity-50'}">
-                    <td class="p-3 text-center"><input type="checkbox" id="device_${originalIndex}" data-device-index="${originalIndex}" class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" ${!hasFindings ? 'disabled' : ''} title="${!hasFindings ? 'Jegyzőkönyv nem generálható, mert nincs rögzítve vizsgálati megállapítás.' : 'Kiválasztás jegyzőkönyv generáláshoz'}"></td>
+                    <td class="p-3 text-center"><input type="checkbox" id="device_${originalIndex}" data-device-index="${originalIndex}" class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" title="Kiválasztás jegyzőkönyv generáláshoz"></td>
                     <td class="p-3 whitespace-nowrap text-gray-400" title="${inspectionDate}">${inspectionDate || 'N/A'}</td>
                     <td class="p-3 whitespace-nowrap" title="${deviceName}">${deviceName}</td>
                     <td class="p-3 whitespace-nowrap text-gray-400" title="${deviceType}">${deviceType || 'N/A'}</td>
