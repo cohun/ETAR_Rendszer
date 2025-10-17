@@ -261,6 +261,7 @@
                 if (buttonTarget.id === 'saveToDriveBtnEjk') showSaveConfirmation();
                 if (buttonTarget.id === 'processFilesBtnEjk') handleProcessFilesEjk();
                 if (buttonTarget.id === 'generateProtocolsBtnEny') handleGenerateProtocolsEny();
+                if (buttonTarget.id === 'deleteSelectedBtnEjk') handleDeleteSelectedEjk();
                 if (buttonTarget.id === 'deleteSelectedBtnEny') handleDeleteSelectedEny();
                 if (buttonTarget.id === 'downloadDbBtnEny') handleDownloadDatabase();
                 if (buttonTarget.id === 'registerNewDeviceFromSearchBtn') {
@@ -1105,6 +1106,48 @@
         }
     }
 
+    async function handleDeleteSelectedEjk() {
+        const statusEl = document.getElementById('generationStatusEjk');
+        const selectedCheckboxes = document.querySelectorAll('#deviceListEjk input[type="checkbox"]:checked:not(#selectAllCheckboxEjk)');
+
+        if (selectedCheckboxes.length === 0) {
+            alert('Kérjük, válasszon ki legalább egy eszközt a törléshez!');
+            return;
+        }
+
+        // 1. Első megerősítés
+        const firstConfirm = confirm(`Biztosan törölni szeretné a kiválasztott ${selectedCheckboxes.length} eszközt az adatbázisból? Ez a művelet nem vonható vissza!`);
+        if (!firstConfirm) {
+            return;
+        }
+
+        // 2. Második, nyomatékosabb megerősítés
+        const secondConfirm = prompt(`A törlés végleges! A folytatáshoz írja be a következő szót: TÖRLÉS`);
+        if (secondConfirm !== 'TÖRLÉS') {
+            alert('A megerősítés sikertelen, a törlés megszakítva.');
+            return;
+        }
+
+        statusEl.innerHTML = `<div class="loader mx-auto"></div><p>Kijelölt elemek törlése és az adatbázis frissítése...</p>`;
+
+        try {
+            const indicesToDelete = Array.from(selectedCheckboxes).map(cb => parseInt(cb.dataset.deviceIndex, 10));
+            partnerDatabase = partnerDatabase.filter((_, index) => !indicesToDelete.includes(index));
+
+            const workbook = XLSX.utils.book_new();
+            const worksheet = XLSX.utils.json_to_sheet(partnerDatabase);
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Adatok');
+            const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            await uploadFile(currentPartner.databaseFileId, blob);
+
+            statusEl.textContent = 'A kijelölt elemek törlése sikeres volt. A lista frissül...';
+            renderDeviceList(); // A lista újrarajzolása a frissített adatokkal
+        } catch (err) {
+            statusEl.textContent = `Hiba történt a törlés során: ${err.message}`;
+        }
+    }
+
     async function convertDocxToPdf(docxBlob) {
         let tempDocId = null;
         try {
@@ -1707,6 +1750,12 @@
                             <h3 class="text-lg font-semibold mb-3">3. Generálás indítása</h3>
                             <button id="processFilesBtnEjk" class="btn btn-success w-full" disabled>Jegyzőkönyvek generálása</button>
                             <div id="generationStatusEjk" class="text-center my-4 font-semibold h-12"></div>
+                        </div>
+                        <div class="border-t border-red-800/50 pt-4">
+                            <h3 class="text-lg font-semibold mb-3 text-red-400">Veszélyes Zóna</h3>
+                            <button id="deleteSelectedBtnEjk" class="btn btn-danger w-full">
+                                Kiválasztottak törlése
+                            </button>
                         </div>
                         <div class="mt-auto"></div> <!-- Pushes content up -->
                     </div>
