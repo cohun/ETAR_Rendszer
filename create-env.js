@@ -31,7 +31,8 @@ console.log(`Copying static assets to ${outputDir}...`);
 const assetsToCopy = [
     'ETAR_H-IITB_512.png',
     'ETAR_H.png',
-    'logo.jpg'
+    'logo.jpg',
+    'privacy.html'
 ];
 
 // Copy etar_rendszer.html to public/index.html
