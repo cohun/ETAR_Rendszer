@@ -697,7 +697,7 @@
                 'Következő terhelési próba': document.getElementById('nextLoadTestDateNew').value,
                 'Megállapítások': document.getElementById('inspectionResultNew').value,
                 'Feltárt hiba': document.getElementById('foundFaultNew').value,
-                'Felhasznált anyagok, intézkedés': document.getElementById('actionsTakenNew').value,
+                'Felhasznáűlt anyagok': document.getElementById('actionsTakenNew').value,
             };
 
             // 2. Megfelelő rekord megkeresése és frissítése a `partnerDatabase`-ben
@@ -781,7 +781,7 @@
                     </div>
                     <div class="md:col-span-2"><label class="block text-sm mb-1">Vizsgálat eredménye (Megállapítások)</label><textarea name="megallapitasok_new" id="inspectionResultNew" rows="3" class="input-field"></textarea></div>
                     <div class="md:col-span-2"><label class="block text-sm mb-1">Feltárt hiba</label><textarea name="hiba_new" id="foundFaultNew" rows="3" class="input-field"></textarea></div>
-                    <div class="md:col-span-2"><label class="block text-sm mb-1">Felhasznált anyagok, intézkedés</label><textarea name="intezkedes_new" id="actionsTakenNew" rows="3" class="input-field"></textarea></div>
+                    <div class="md:col-span-2"><label class="block text-sm mb-1">Felhasznált anyagok</label><textarea name="intezkedes_new" id="actionsTakenNew" rows="3" class="input-field"></textarea></div>
                 </div>
                 <button id="finishNewInspectionBtn" class="btn btn-success mt-6 w-full" disabled>Kész, következő eszköz</button>
             </div>`;
@@ -820,6 +820,7 @@
             'Gyártó': currentData.eszkoz_gyarto,
             'Gyári szám': currentData.eszkoz_gyariszam,
             'Gyártás éve': currentData.gyartas_eve,
+            'ETAR kód': '',
         };
         newDeviceData.push(newRecord);
         
@@ -861,6 +862,7 @@
                 'Gyártó': currentData.eszkoz_gyarto,
                 'Gyári szám': currentData.eszkoz_gyariszam,
                 'Gyártás éve': currentData.gyartas_eve,
+                'ETAR kód': '',
             };
              newDeviceData.push(newRecord);
              form.reset();
