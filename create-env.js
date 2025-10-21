@@ -29,15 +29,15 @@ console.log('env.js file generated successfully.');
 console.log(`Copying static assets to ${outputDir}...`);
 
 const assetsToCopy = [
+    'index.html',
+    'etar_rendszer.html',
     'ETAR_H-IITB_512.png',
     'ETAR_H.png',
     'logo.jpg',
     'privacy.html'
 ];
 
-// Copy etar_rendszer.html to public/index.html
-fse.copySync('etar_rendszer.html', path.join(outputDir, 'index.html'));
-console.log('- Copied etar_rendszer.html to index.html');
+
 
 assetsToCopy.forEach(file => {
     if (fs.existsSync(file)) {
