@@ -1904,12 +1904,14 @@
     
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const inspectionFieldIds = [
-            'inspectionTypeNew', 'nextInspectionDateNew', 'nextLoadTestDateNew', 
-            'inspectionResultNew', 'foundFaultNew', 'actionsTakenNew'
-        ];
+        // --- FORM PERSISTENCE LOGIC ---
 
+        // 1. SAVE a list of field values to session storage
         const saveInspectionValues = () => {
+            const inspectionFieldIds = [
+                'inspectionTypeNew', 'nextInspectionDateNew', 'nextLoadTestDateNew', 
+                'inspectionResultNew', 'foundFaultNew', 'actionsTakenNew'
+            ];
             inspectionFieldIds.forEach(id => {
                 const field = document.getElementById(id);
                 if (field) {
@@ -1918,43 +1920,25 @@
             });
         };
 
-        const applyInspectionValues = () => {
-            inspectionFieldIds.forEach(id => {
-                const field = document.getElementById(id);
-                const savedValue = sessionStorage.getItem(`persist_${id}`);
-                if (field && savedValue !== null) {
-                    field.value = savedValue;
-                    field.classList.add('suggested-value');
-                    
-                    const removeSuggestionStyle = () => field.classList.remove('suggested-value');
-                    field.addEventListener('focus', removeSuggestionStyle);
-                    field.addEventListener('input', removeSuggestionStyle);
-                }
-            });
-        };
+        // 2. REMOVE grey style on user interaction (using event delegation)
+        document.body.addEventListener('focusin', (event) => {
+            if (event.target && event.target.classList.contains('suggested-value')) {
+                event.target.classList.remove('suggested-value');
+            }
+        });
+         document.body.addEventListener('input', (event) => {
+            if (event.target && event.target.classList.contains('suggested-value')) {
+                event.target.classList.remove('suggested-value');
+            }
+        });
 
-        // Save values when the "Finish" button is clicked
+        // 3. TRIGGER save on button click
         document.body.addEventListener('click', (event) => {
             const button = event.target.closest('button');
             if (button && button.id === 'finishNewInspectionBtn') {
                 saveInspectionValues();
             }
         });
-
-        // Apply values when the form is dynamically added
-        const inspectionContainer = document.getElementById('deviceSearchResult');
-        if (inspectionContainer) {
-            const observer = new MutationObserver((mutationsList) => {
-                for(let mutation of mutationsList) {
-                    if (mutation.type === 'childList' && document.getElementById('newInspectionDataEntry')) {
-                        // Use a minimal timeout to ensure this runs after the DOM is fully settled
-                        setTimeout(applyInspectionValues, 10); // 10ms is a safe, small delay
-                        return; // No need to check other mutations
-                    }
-                }
-            });
-            observer.observe(inspectionContainer, { childList: true, subtree: true });
-        }
     });
     </script>
 </body>
