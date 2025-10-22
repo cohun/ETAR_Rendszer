@@ -1904,60 +1904,64 @@
     
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // --- CONFIGURATION ---
-        const inspectionFieldIds = ['inspectionTypeNew', 'nextInspectionDateNew', 'nextLoadTestDateNew', 'inspectionResultNew', 'foundFaultNew', 'actionsTakenNew'];
-        const newDeviceFieldNames = ['eszkoz_megnevezes', 'eszkoz_tipus', 'eszkoz_gyarto', 'eszkoz_hossz', 'gyartas_eve', 'eszkoz_teherbiras', 'eszkoz_uzemeltetoi_azonosito'];
+        // --- FOCUS ON INSPECTION FORM ONLY ---
 
-        // --- HELPERS ---
-        const getField = (nameOrId, isNewDevice) => isNewDevice ? document.querySelector(`#dataEntryFormEjk [name="${nameOrId}"]`) : document.getElementById(nameOrId);
+        const inspectionFieldIds = [
+            'inspectionTypeNew', 
+            'nextInspectionDateNew', 
+            'nextLoadTestDateNew', 
+            'inspectionResultNew', 
+            'foundFaultNew', 
+            'actionsTakenNew'
+        ];
 
-        const saveValues = (fields, isNewDevice) => {
-            fields.forEach(name => {
-                const field = getField(name, isNewDevice);
-                if (field) sessionStorage.setItem(name, field.value);
-            });
-        };
-
-        const applyValues = (fields, isNewDevice) => {
-            fields.forEach(name => {
-                const field = getField(name, isNewDevice);
-                const savedValue = sessionStorage.getItem(name);
-                if (field && savedValue) {
-                    field.value = savedValue;
-                    field.classList.add('suggested-value');
-                    const removeSuggStyle = () => field.classList.remove('suggested-value');
-                    field.addEventListener('focus', removeSuggStyle, { once: true });
-                    field.addEventListener('input', removeSuggStyle, { once: true });
-                    field.addEventListener('change', removeSuggStyle, { once: true });
+        const saveInspectionValues = () => {
+            inspectionFieldIds.forEach(id => {
+                const field = document.getElementById(id);
+                if (field) {
+                    sessionStorage.setItem(`persist_${id}`, field.value);
                 }
             });
         };
 
-        // --- EVENT HANDLING ---
+        const applyInspectionValues = () => {
+            inspectionFieldIds.forEach(id => {
+                const field = document.getElementById(id);
+                const savedValue = sessionStorage.getItem(`persist_${id}`);
+                if (field && savedValue !== null) {
+                    field.value = savedValue;
+                    field.classList.add('suggested-value');
+                    
+                    const removeSuggestionStyle = () => field.classList.remove('suggested-value');
+                    field.addEventListener('focus', removeSuggestionStyle);
+                    field.addEventListener('input', removeSuggestionStyle);
+                }
+            });
+        };
+
+        // Save values when the "Finish" button is clicked
         document.body.addEventListener('click', (event) => {
-            if (event.target.id === 'addAnotherDeviceBtnEjk') {
-                saveValues(newDeviceFieldNames, true);
-                setTimeout(() => applyValues(newDeviceFieldNames, true), 50);
-            }
-            if (event.target.id === 'finishNewInspectionBtn') {
-                saveValues(inspectionFieldIds, false);
+            const button = event.target.closest('button');
+            if (button && button.id === 'finishNewInspectionBtn') {
+                saveInspectionValues();
             }
         });
 
-        // Use MutationObserver to apply data when forms are dynamically created
-        const observer = new MutationObserver(() => {
-            if (document.getElementById('newInspectionDataEntry')) {
-                applyValues(inspectionFieldIds, false);
-            }
-            if (document.getElementById('dataEntryFormEjk')) {
-                applyValues(newDeviceFieldNames, true);
-            }
-        });
-
-        const newInspectionTarget = document.getElementById('deviceSearchResult');
-        const newDeviceTarget = document.getElementById('dataEntryScreen');
-        if (newInspectionTarget) observer.observe(newInspectionTarget, { childList: true, subtree: true });
-        if (newDeviceTarget) observer.observe(newDeviceTarget, { childList: true, subtree: true });
+        // Apply values when the form is dynamically added to the page
+        const inspectionContainer = document.getElementById('deviceSearchResult');
+        if (inspectionContainer) {
+            const observer = new MutationObserver((mutationsList) => {
+                for(let mutation of mutationsList) {
+                    if (mutation.type === 'childList') {
+                        // Check if the form's specific container has been added
+                        if (document.getElementById('newInspectionDataEntry')) {
+                            applyInspectionValues();
+                        }
+                    }
+                }
+            });
+            observer.observe(inspectionContainer, { childList: true, subtree: true });
+        }
     });
     </script>
 </body>
