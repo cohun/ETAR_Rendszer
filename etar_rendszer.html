@@ -62,16 +62,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        .suggested-value {
-            color: #9ca3af !important; /* Tailwind's gray-400 */
-            font-weight: normal !important;
-        }
-        select.suggested-value {
-            color: #9ca3af !important;
-            font-weight: normal !important;
-        }
-    </style>
 </head>
 <body class="bg-blue-900 text-gray-200 min-h-screen flex items-center justify-center p-4">
     
@@ -793,7 +783,10 @@
                     <div class="md:col-span-2"><label class="block text-sm mb-1">Feltárt hiba</label><textarea name="hiba_new" id="foundFaultNew" rows="3" class="input-field"></textarea></div>
                     <div class="md:col-span-2"><label class="block text-sm mb-1">Felhasznált anyagok</label><textarea name="intezkedes_new" id="actionsTakenNew" rows="3" class="input-field"></textarea></div>
                 </div>
-                <button id="finishNewInspectionBtn" class="btn btn-success mt-6 w-full" disabled>Kész, következő eszköz</button>
+                <div class="flex flex-col sm:flex-row gap-4 mt-6">
+                    <button type="button" id="copyPreviousInspectionDataBtn" class="btn btn-info w-full sm:w-auto">Előző adatok másolása</button>
+                    <button id="finishNewInspectionBtn" class="btn btn-success w-full" disabled>Kész, következő eszköz</button>
+                </div>
             </div>`;
     }
 
@@ -1907,36 +1900,59 @@
         // --- FORM PERSISTENCE LOGIC ---
 
         // 1. SAVE a list of field values to session storage
-        const saveInspectionValues = () => {
+        const saveInspectionData = () => {
             const inspectionFieldIds = [
-                'inspectionTypeNew', 'nextInspectionDateNew', 'nextLoadTestDateNew', 
-                'inspectionResultNew', 'foundFaultNew', 'actionsTakenNew'
+                'inspectionTypeNew', 
+                'nextInspectionDateNew', 
+                'nextLoadTestDateNew', 
+                'inspectionResultNew',
+                'foundFaultNew',
+                'actionsTakenNew'
             ];
             inspectionFieldIds.forEach(id => {
                 const field = document.getElementById(id);
                 if (field) {
-                    sessionStorage.setItem(`persist_${id}`, field.value);
+                    sessionStorage.setItem(`persist_manual_${id}`, field.value);
                 }
             });
         };
 
-        // 2. REMOVE grey style on user interaction (using event delegation)
-        document.body.addEventListener('focusin', (event) => {
-            if (event.target && event.target.classList.contains('suggested-value')) {
-                event.target.classList.remove('suggested-value');
-            }
-        });
-         document.body.addEventListener('input', (event) => {
-            if (event.target && event.target.classList.contains('suggested-value')) {
-                event.target.classList.remove('suggested-value');
-            }
-        });
+        // 2. LOAD data from session storage into the form
+        const loadInspectionData = () => {
+            const inspectionFieldIds = [
+                'inspectionTypeNew', 
+                'nextInspectionDateNew', 
+                'nextLoadTestDateNew', 
+                'inspectionResultNew',
+                'foundFaultNew',
+                'actionsTakenNew'
+            ];
+            inspectionFieldIds.forEach(id => {
+                const field = document.getElementById(id);
+                const savedValue = sessionStorage.getItem(`persist_manual_${id}`);
+                if (field && savedValue !== null) {
+                    field.value = savedValue;
+                    // Trigger a change event to ensure any dependent logic runs
+                    field.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+            // After loading, re-validate the form to enable the finish button if applicable
+            updateNewInspectionFinishButtonState();
+        };
 
-        // 3. TRIGGER save on button click
+        // 3. ATTACH listeners using event delegation
         document.body.addEventListener('click', (event) => {
             const button = event.target.closest('button');
-            if (button && button.id === 'finishNewInspectionBtn') {
-                saveInspectionValues();
+            if (!button) return;
+
+            // Save data when finishing an inspection
+            if (button.id === 'finishNewInspectionBtn') {
+                saveInspectionData();
+            }
+
+            // Load data when the new copy button is clicked
+            if (button.id === 'copyPreviousInspectionDataBtn') {
+                loadInspectionData();
             }
         });
     });
