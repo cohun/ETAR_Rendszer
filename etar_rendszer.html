@@ -62,6 +62,16 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .suggested-value {
+            color: #9ca3af !important; /* Tailwind's gray-400 */
+            font-weight: normal !important;
+        }
+        select.suggested-value {
+            color: #9ca3af !important;
+            font-weight: normal !important;
+        }
+    </style>
 </head>
 <body class="bg-blue-900 text-gray-200 min-h-screen flex items-center justify-center p-4">
     
@@ -1892,5 +1902,63 @@
     <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
     <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
     
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // --- CONFIGURATION ---
+        const inspectionFieldIds = ['inspectionTypeNew', 'nextInspectionDateNew', 'nextLoadTestDateNew', 'inspectionResultNew', 'foundFaultNew', 'actionsTakenNew'];
+        const newDeviceFieldNames = ['eszkoz_megnevezes', 'eszkoz_tipus', 'eszkoz_gyarto', 'eszkoz_hossz', 'gyartas_eve', 'eszkoz_teherbiras', 'eszkoz_uzemeltetoi_azonosito'];
+
+        // --- HELPERS ---
+        const getField = (nameOrId, isNewDevice) => isNewDevice ? document.querySelector(`#dataEntryFormEjk [name="${nameOrId}"]`) : document.getElementById(nameOrId);
+
+        const saveValues = (fields, isNewDevice) => {
+            fields.forEach(name => {
+                const field = getField(name, isNewDevice);
+                if (field) sessionStorage.setItem(name, field.value);
+            });
+        };
+
+        const applyValues = (fields, isNewDevice) => {
+            fields.forEach(name => {
+                const field = getField(name, isNewDevice);
+                const savedValue = sessionStorage.getItem(name);
+                if (field && savedValue) {
+                    field.value = savedValue;
+                    field.classList.add('suggested-value');
+                    const removeSuggStyle = () => field.classList.remove('suggested-value');
+                    field.addEventListener('focus', removeSuggStyle, { once: true });
+                    field.addEventListener('input', removeSuggStyle, { once: true });
+                    field.addEventListener('change', removeSuggStyle, { once: true });
+                }
+            });
+        };
+
+        // --- EVENT HANDLING ---
+        document.body.addEventListener('click', (event) => {
+            if (event.target.id === 'addAnotherDeviceBtnEjk') {
+                saveValues(newDeviceFieldNames, true);
+                setTimeout(() => applyValues(newDeviceFieldNames, true), 50);
+            }
+            if (event.target.id === 'finishNewInspectionBtn') {
+                saveValues(inspectionFieldIds, false);
+            }
+        });
+
+        // Use MutationObserver to apply data when forms are dynamically created
+        const observer = new MutationObserver(() => {
+            if (document.getElementById('newInspectionDataEntry')) {
+                applyValues(inspectionFieldIds, false);
+            }
+            if (document.getElementById('dataEntryFormEjk')) {
+                applyValues(newDeviceFieldNames, true);
+            }
+        });
+
+        const newInspectionTarget = document.getElementById('deviceSearchResult');
+        const newDeviceTarget = document.getElementById('dataEntryScreen');
+        if (newInspectionTarget) observer.observe(newInspectionTarget, { childList: true, subtree: true });
+        if (newDeviceTarget) observer.observe(newDeviceTarget, { childList: true, subtree: true });
+    });
+    </script>
 </body>
 </html>
