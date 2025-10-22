@@ -1904,15 +1904,9 @@
     
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // --- FOCUS ON INSPECTION FORM ONLY ---
-
         const inspectionFieldIds = [
-            'inspectionTypeNew', 
-            'nextInspectionDateNew', 
-            'nextLoadTestDateNew', 
-            'inspectionResultNew', 
-            'foundFaultNew', 
-            'actionsTakenNew'
+            'inspectionTypeNew', 'nextInspectionDateNew', 'nextLoadTestDateNew', 
+            'inspectionResultNew', 'foundFaultNew', 'actionsTakenNew'
         ];
 
         const saveInspectionValues = () => {
@@ -1947,16 +1941,15 @@
             }
         });
 
-        // Apply values when the form is dynamically added to the page
+        // Apply values when the form is dynamically added
         const inspectionContainer = document.getElementById('deviceSearchResult');
         if (inspectionContainer) {
             const observer = new MutationObserver((mutationsList) => {
                 for(let mutation of mutationsList) {
-                    if (mutation.type === 'childList') {
-                        // Check if the form's specific container has been added
-                        if (document.getElementById('newInspectionDataEntry')) {
-                            applyInspectionValues();
-                        }
+                    if (mutation.type === 'childList' && document.getElementById('newInspectionDataEntry')) {
+                        // Use a minimal timeout to ensure this runs after the DOM is fully settled
+                        setTimeout(applyInspectionValues, 10); // 10ms is a safe, small delay
+                        return; // No need to check other mutations
                     }
                 }
             });
