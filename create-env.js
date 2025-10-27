@@ -31,10 +31,13 @@ console.log(`Copying static assets to ${outputDir}...`);
 const assetsToCopy = [
     'index.html',
     'etar_rendszer.html',
+    'style.css',
     'ETAR_H-IITB_512.png',
     'ETAR_H.png',
+    'H-ITB_Logo.jpg',
     'logo.jpg',
-    'privacy.html'
+    'privacy.html',
+    'ETAR_Background.png'
 ];
 
 
