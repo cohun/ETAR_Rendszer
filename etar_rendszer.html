@@ -264,7 +264,8 @@
                 if (buttonTarget.id === 'ejkNewInspectionBtn') showNewInspectionScreen();
                 if (buttonTarget.id === 'ejkDownloadDbBtn') handleDownloadDatabase();
                 if (buttonTarget.id === 'ejkGenerateProtocolsBtn') showEjkDocGeneration();
-                if (buttonTarget.id === 'addAnotherDeviceBtnEjk') handleAddAnotherDeviceEjk();
+                if (buttonTarget.id === 'addAnotherDeviceBtnEjk') { saveTemporaryDeviceData(); handleAddAnotherDeviceEjk(); }
+                if (buttonTarget.id === 'loadPreviousDataBtn') loadTemporaryDeviceData();
                 if (buttonTarget.id === 'saveToDriveBtnEjk') showSaveConfirmation();
                 if (buttonTarget.id === 'processFilesBtnEjk') handleProcessFilesEjk();
                 if (buttonTarget.id === 'generateProtocolsBtnEny') handleGenerateProtocolsEny();
@@ -580,7 +581,42 @@
         newDeviceData = [];
         const screen = screens.dataEntry;
         screen.innerHTML = getNewDeviceHtml(returnScreen, prefillData);
-        showScreen('dataEntry'); // A képernyő ID-ja 'dataEntryScreen' marad
+        showScreen('dataEntry');
+        updateRestoreButtonVisibility();
+    }
+
+    function saveTemporaryDeviceData() {
+        const fieldsToSave = [
+            'eszkoz_megnevezes', 'eszkoz_tipus', 'eszkoz_gyarto', 
+            'eszkoz_hossz', 'gyartas_eve', 'eszkoz_teherbiras'
+        ];
+        const data = {};
+        fieldsToSave.forEach(id => {
+            const field = document.getElementById(id);
+            if (field) data[id] = field.value;
+        });
+        sessionStorage.setItem('temporaryDeviceData', JSON.stringify(data));
+    }
+
+    function loadTemporaryDeviceData() {
+        const dataString = sessionStorage.getItem('temporaryDeviceData');
+        if (!dataString) return;
+        const data = JSON.parse(dataString);
+        Object.keys(data).forEach(id => {
+            const field = document.getElementById(id);
+            if (field) field.value = data[id];
+        });
+    }
+
+    function updateRestoreButtonVisibility() {
+        const btn = document.getElementById('loadPreviousDataBtn');
+        if (btn) {
+            if (sessionStorage.getItem('temporaryDeviceData')) {
+                btn.style.display = 'block';
+            } else {
+                btn.style.display = 'none';
+            }
+        }
     }
 
     function showEjkDocGeneration() {
@@ -832,9 +868,6 @@
         setTimeout(() => { notificationEl.textContent = ''; }, 3000);
         
         form.reset();
-        form.querySelectorAll('input, textarea').forEach(input => {
-            input.placeholder = input.name === 'eszkoz_gyariszam' ? '' : lastDeviceData[input.name] || '';
-        });
     }
 
     // --- BIZTONSÁGI MENTÉS MEGERŐSÍTÉSSEL ---
@@ -1708,20 +1741,23 @@
                 <h3 class="text-xl font-semibold border-b border-blue-700 pb-2 mb-6">Új eszköz alapadatai</h3>
                  <form id="dataEntryFormEjk" class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
                     <!-- Bal oszlop -->
-                    <div><label class="block text-sm">Megnevezés</label><input name="eszkoz_megnevezes" class="input-field" required value="${prefillData.eszkoz_megnevezes || ''}"></div>
-                    <div><label class="block text-sm">Gyári szám</label><input name="eszkoz_gyariszam" class="input-field" required value="${prefillData.eszkoz_gyariszam || ''}"></div>
-                    <div><label class="block text-sm">Típus</label><input name="eszkoz_tipus" class="input-field" value="${prefillData.eszkoz_tipus || ''}"></div>
-                    <div><label class="block text-sm">Gyártó</label><input name="eszkoz_gyarto" class="input-field" value="${prefillData.eszkoz_gyarto || ''}"></div>
-                    <div><label class="block text-sm">Hasznos hossz</label><input name="eszkoz_hossz" class="input-field" value="${prefillData.eszkoz_hossz || ''}"></div>
-                    <div><label class="block text-sm">Gyártás éve</label><input name="gyartas_eve" class="input-field" value="${prefillData.gyartas_eve || ''}"></div>
-                    <div><label class="block text-sm">Teherbírás (WLL)</label><input name="eszkoz_teherbiras" class="input-field" value="${prefillData.eszkoz_teherbiras || ''}"></div>
-                    <div><label class="block text-sm">Üzemeltetői azonosító</label><input name="eszkoz_uzemeltetoi_azonosito" class="input-field" value="${prefillData.eszkoz_uzemeltetoi_azonosito || ''}"></div>
+                    <div><label class="block text-sm">Megnevezés</label><input name="eszkoz_megnevezes" id="eszkoz_megnevezes" class="input-field" required value="${prefillData.eszkoz_megnevezes || ''}"></div>
+                    <div><label class="block text-sm">Gyári szám</label><input name="eszkoz_gyariszam" id="eszkoz_gyariszam" class="input-field" required value="${prefillData.eszkoz_gyariszam || ''}"></div>
+                    <div><label class="block text-sm">Típus</label><input name="eszkoz_tipus" id="eszkoz_tipus" class="input-field" value="${prefillData.eszkoz_tipus || ''}"></div>
+                    <div><label class="block text-sm">Gyártó</label><input name="eszkoz_gyarto" id="eszkoz_gyarto" class="input-field" value="${prefillData.eszkoz_gyarto || ''}"></div>
+                    <div><label class="block text-sm">Hasznos hossz</label><input name="eszkoz_hossz" id="eszkoz_hossz" class="input-field" value="${prefillData.eszkoz_hossz || ''}"></div>
+                    <div><label class="block text-sm">Gyártás éve</label><input name="gyartas_eve" id="gyartas_eve" class="input-field" value="${prefillData.gyartas_eve || ''}"></div>
+                    <div><label class="block text-sm">Teherbírás (WLL)</label><input name="eszkoz_teherbiras" id="eszkoz_teherbiras" class="input-field" value="${prefillData.eszkoz_teherbiras || ''}"></div>
+                    <div><label class="block text-sm">Üzemeltetői azonosító</label><input name="eszkoz_uzemeltetoi_azonosito" id="eszkoz_uzemeltetoi_azonosito" class="input-field" value="${prefillData.eszkoz_uzemeltetoi_azonosito || ''}"></div>
                     
                     <!-- Jobb oszlop -->
                 </form>
                 <div id="notificationEjk" class="text-center my-4 text-green-400 font-semibold h-6"></div>
                 <div class="flex flex-col sm:flex-row gap-4 justify-between mt-6">
-                    <button id="${backButtonId}" class="btn btn-secondary">${backButtonText}</button>
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <button id="${backButtonId}" class="btn btn-secondary">${backButtonText}</button>
+                        <button type="button" id="loadPreviousDataBtn" class="btn btn-info" style="display:none;">Előző adatok betöltése</button>
+                    </div>
                     <div class="flex flex-col sm:flex-row gap-4">
                         <button id="addAnotherDeviceBtnEjk" class="btn btn-primary">Adatok hozzáadása és új eszköz</button>
                         <button id="saveToDriveBtnEjk" data-return-screen="${returnScreen}" class="btn btn-success">Változtatások mentése a Drive-ra</button>
