@@ -582,7 +582,6 @@
         const screen = screens.dataEntry;
         screen.innerHTML = getNewDeviceHtml(returnScreen, prefillData);
         showScreen('dataEntry');
-        updateRestoreButtonVisibility();
     }
 
     function saveTemporaryDeviceData() {
@@ -606,17 +605,6 @@
             const field = document.getElementById(id);
             if (field) field.value = data[id];
         });
-    }
-
-    function updateRestoreButtonVisibility() {
-        const btn = document.getElementById('loadPreviousDataBtn');
-        if (btn) {
-            if (sessionStorage.getItem('temporaryDeviceData')) {
-                btn.style.display = 'block';
-            } else {
-                btn.style.display = 'none';
-            }
-        }
     }
 
     function showEjkDocGeneration() {
@@ -1756,7 +1744,7 @@
                 <div class="flex flex-col sm:flex-row gap-4 justify-between mt-6">
                     <div class="flex flex-col sm:flex-row gap-4">
                         <button id="${backButtonId}" class="btn btn-secondary">${backButtonText}</button>
-                        <button type="button" id="loadPreviousDataBtn" class="btn btn-info" style="display:none;">Előző adatok betöltése</button>
+                        <button type="button" id="loadPreviousDataBtn" class="btn btn-info">Előző adatok betöltése</button>
                     </div>
                     <div class="flex flex-col sm:flex-row gap-4">
                         <button id="addAnotherDeviceBtnEjk" class="btn btn-primary">Adatok hozzáadása és új eszköz</button>
